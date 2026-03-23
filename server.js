@@ -5,7 +5,7 @@ const app = express();
 const server = require('http').createServer(app);
 const wss = new WebSocket.Server({ server });
 
-const AIS_API_KEY = "GANTI_DENGAN_API_KEY_KAMU"; 
+const AIS_API_KEY = "ff888fe863abe2e59fa6f48a76e5f0223f726174"; 
 
 // Koneksi ke sumber data (AISStream)
 const aisStream = new WebSocket("wss://stream.aisstream.io/v0/stream");
