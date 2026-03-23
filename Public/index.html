@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="https://unpkg.com" />
+    <style>#map { height: 100vh; }</style>
+</head>
+<body>
+    <div id="map"></div>
+    <script src="https://unpkg.com"></script>
+    <script>
+        const map = L.map('map').setView([-2, 118], 5);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        const markers = {};
+
+        const socket = new WebSocket(`wss://${window.location.host}`);
+        socket.onmessage = (e) => {
+            const d = JSON.parse(e.data);
+            const { MMSI, latitude, longitude, ShipName } = d.MetaData;
+            if (markers[MMSI]) {
+                markers[MMSI].setLatLng([latitude, longitude]);
+            } else {
+                markers[MMSI] = L.marker([latitude, longitude]).addTo(map).bindPopup(ShipName);
+            }
+        };
+    </script>
+</body>
+</html>
