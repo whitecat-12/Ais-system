@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Routing Kapal PRO (Anti Tabrak + Smooth)</title>
+  <title>Routing Kapal Final (Smooth + Anti Lag)</title>
   <meta charset="utf-8" />
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -125,38 +125,11 @@ function pointInPolygon(point, vs){
 }
 
 // ==========================
-// CEK GARIS TABRAKAN
-// ==========================
-function lineIntersectsPolygon(a, b, polygon) {
-
-  for (let i = 0; i < polygon.length - 1; i++) {
-    let c = polygon[i];
-    let d = polygon[i + 1];
-
-    if (linesIntersect(a, b, c, d)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function linesIntersect(a,b,c,d){
-
-  function ccw(p1,p2,p3){
-    return (p3[0]-p1[0])*(p2[1]-p1[1]) >
-           (p2[0]-p1[0])*(p3[1]-p1[1]);
-  }
-
-  return (ccw(a,c,d) != ccw(b,c,d)) &&
-         (ccw(a,b,c) != ccw(a,b,d));
-}
-
-// ==========================
-// CEK BLOCK (dengan buffer)
+// BLOCK CHECK (CEPAT)
 // ==========================
 function isBlocked(point){
 
-  let buffer = 0.05; // ~5km
+  let buffer = 0.1;
 
   for(let island of islands){
 
@@ -165,8 +138,7 @@ function isBlocked(point){
     }
 
     for(let p of island.polygon){
-      let d = Math.hypot(point[0]-p[0], point[1]-p[1]);
-      if(d < buffer){
+      if(Math.hypot(point[0]-p[0], point[1]-p[1]) < buffer){
         return true;
       }
     }
@@ -176,12 +148,12 @@ function isBlocked(point){
 }
 
 // ==========================
-// GRID
+// GRID OPTIMAL
 // ==========================
-let step = 0.05;
+let step = 0.1;
 
 function toKey(p){
-  return p[0].toFixed(3)+","+p[1].toFixed(3);
+  return p[0].toFixed(2)+","+p[1].toFixed(2);
 }
 
 // ==========================
@@ -196,7 +168,12 @@ function astar(start,end){
   g[toKey(start)] = 0;
   f[toKey(start)] = dist(start,end);
 
-  while(open.length){
+  let maxIter = 5000;
+  let iter = 0;
+
+  while(open.length && iter < maxIter){
+
+    iter++;
 
     open.sort((a,b)=>f[toKey(a)]-f[toKey(b)]);
     let cur = open.shift();
@@ -208,18 +185,6 @@ function astar(start,end){
     for(let n of neighbors(cur)){
 
       if(isBlocked(n)) continue;
-
-      // 🔥 CEK GARIS TABRAKAN
-      let collision = false;
-
-      for (let island of islands) {
-        if (lineIntersectsPolygon(cur, n, island.polygon)) {
-          collision = true;
-          break;
-        }
-      }
-
-      if (collision) continue;
 
       let key = toKey(n);
       let temp = g[toKey(cur)] + dist(cur,n);
@@ -240,11 +205,11 @@ function astar(start,end){
 }
 
 // ==========================
-// 🔥 32 DIRECTION
+// 16 ARAH (HALUS + CEPAT)
 // ==========================
 function neighbors(p){
   let result = [];
-  let directions = 32;
+  let directions = 16;
 
   for(let i = 0; i < directions; i++){
     let angle = (2 * Math.PI / directions) * i;
@@ -269,7 +234,7 @@ function dist(a,b){
 }
 
 // ==========================
-// RECONSTRUCT
+// RECONSTRUCT PATH
 // ==========================
 function reconstruct(cameFrom,cur){
   let path=[cur];
@@ -283,39 +248,31 @@ function reconstruct(cameFrom,cur){
 }
 
 // ==========================
-// 🔥 SMOOTH BEZIER
+// SMOOTH RINGAN
 // ==========================
 function smoothPath(path){
 
-  if(path.length < 3) return path;
-
   let smooth = [];
 
-  for (let i = 0; i < path.length - 2; i++) {
+  for (let i = 0; i < path.length - 1; i++) {
 
-    let p0 = path[i];
-    let p1 = path[i + 1];
-    let p2 = path[i + 2];
+    let a = path[i];
+    let b = path[i+1];
 
-    for (let t = 0; t <= 1; t += 0.2) {
-
-      let lat = (1-t)*(1-t)*p0[0] + 
-                2*(1-t)*t*p1[0] + 
-                t*t*p2[0];
-
-      let lng = (1-t)*(1-t)*p0[1] + 
-                2*(1-t)*t*p1[1] + 
-                t*t*p2[1];
-
-      smooth.push([lat,lng]);
-    }
+    smooth.push(a);
+    smooth.push([
+      (a[0]+b[0])/2,
+      (a[1]+b[1])/2
+    ]);
   }
+
+  smooth.push(path[path.length-1]);
 
   return smooth;
 }
 
 // ==========================
-// RUN
+// RUN ROUTE
 // ==========================
 function runRoute(){
 
@@ -330,6 +287,12 @@ function runRoute(){
   }
 
   let rawPath = astar(start,end);
+
+  if(rawPath.length === 0){
+    alert("Rute tidak ditemukan!");
+    return;
+  }
+
   let path = smoothPath(rawPath);
 
   if(routeLine) map.removeLayer(routeLine);
