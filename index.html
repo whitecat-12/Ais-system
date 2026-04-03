@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Routing Kapal JSON + A*</title>
+  <title>Routing Kapal Multi Pulau</title>
   <meta charset="utf-8" />
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -17,11 +17,13 @@
       padding: 10px;
       border-radius: 10px;
       z-index: 1000;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
     }
 
     button {
       margin: 5px;
       padding: 8px;
+      cursor: pointer;
     }
   </style>
 </head>
@@ -49,69 +51,89 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 // ==========================
 // GLOBAL STATE
 // ==========================
-let jawa = [];
+let islands = [];
 let mode = null;
 let start = null;
 let end = null;
 let startMarker, endMarker, routeLine;
 
 // ==========================
-// LOAD JSON
+// LOAD JSON (MULTI PULAU)
 // ==========================
-fetch('jawa.json')
+fetch('islands.json')
 .then(res => res.json())
 .then(data => {
-  jawa = data.polygon;
 
-  // pastikan polygon tertutup
-  jawa.push(jawa[0]);
+  islands = data.islands;
 
-  L.polygon(jawa, {color:'red'}).addTo(map);
+  islands.forEach(island => {
+    island.polygon.push(island.polygon[0]); // tutup polygon
+
+    L.polygon(island.polygon, {
+      color:'red'
+    }).addTo(map);
+  });
+
 });
 
 // ==========================
 // MODE
 // ==========================
-function setMode(m) {
+function setMode(m){
   mode = m;
 }
 
 // ==========================
 // CLICK MAP
 // ==========================
-map.on('click', function(e) {
+map.on('click', function(e){
+
   let p = [e.latlng.lat, e.latlng.lng];
 
-  if (mode === 'start') {
+  if(mode === 'start'){
     start = p;
-    if (startMarker) map.removeLayer(startMarker);
-    startMarker = L.marker(p).addTo(map);
+    if(startMarker) map.removeLayer(startMarker);
+    startMarker = L.marker(p).addTo(map).bindPopup("Start");
   }
 
-  if (mode === 'end') {
+  if(mode === 'end'){
     end = p;
-    if (endMarker) map.removeLayer(endMarker);
-    endMarker = L.marker(p).addTo(map);
+    if(endMarker) map.removeLayer(endMarker);
+    endMarker = L.marker(p).addTo(map).bindPopup("End");
   }
+
 });
 
 // ==========================
 // POINT IN POLYGON
 // ==========================
-function pointInPolygon(point, vs) {
+function pointInPolygon(point, vs){
   let x = point[0], y = point[1];
   let inside = false;
 
-  for (let i=0, j=vs.length-1; i<vs.length; j=i++) {
+  for(let i=0, j=vs.length-1; i<vs.length; j=i++){
     let xi=vs[i][0], yi=vs[i][1];
     let xj=vs[j][0], yj=vs[j][1];
 
     let intersect = ((yi>y)!=(yj>y)) &&
       (x < (xj-xi)*(y-yi)/(yj-yi)+xi);
 
-    if (intersect) inside = !inside;
+    if(intersect) inside = !inside;
   }
+
   return inside;
+}
+
+// ==========================
+// CEK SEMUA PULAU
+// ==========================
+function isBlocked(point){
+  for(let island of islands){
+    if(pointInPolygon(point, island.polygon)){
+      return true;
+    }
+  }
+  return false;
 }
 
 // ==========================
@@ -138,25 +160,27 @@ function astar(start,end){
   while(open.length){
 
     open.sort((a,b)=>f[toKey(a)]-f[toKey(b)]);
-    let cur=open.shift();
+    let cur = open.shift();
 
-    if(dist(cur,end)<step)
+    if(dist(cur,end) < step){
       return reconstruct(cameFrom,cur);
+    }
 
     for(let n of neighbors(cur)){
 
-      if(pointInPolygon(n,jawa)) continue;
+      if(isBlocked(n)) continue;
 
-      let k=toKey(n);
-      let temp=g[toKey(cur)] + dist(cur,n);
+      let key = toKey(n);
+      let temp = g[toKey(cur)] + dist(cur,n);
 
-      if(g[k]==undefined || temp<g[k]){
-        cameFrom[k]=cur;
-        g[k]=temp;
-        f[k]=temp+dist(n,end);
+      if(g[key] === undefined || temp < g[key]){
+        cameFrom[key] = cur;
+        g[key] = temp;
+        f[key] = temp + dist(n,end);
 
-        if(!open.find(p=>toKey(p)==k))
+        if(!open.find(p => toKey(p) === key)){
           open.push(n);
+        }
       }
     }
   }
@@ -181,10 +205,12 @@ function dist(a,b){
 
 function reconstruct(cameFrom,cur){
   let path=[cur];
+
   while(cameFrom[toKey(cur)]){
-    cur=cameFrom[toKey(cur)];
+    cur = cameFrom[toKey(cur)];
     path.push(cur);
   }
+
   return path.reverse();
 }
 
@@ -193,13 +219,13 @@ function reconstruct(cameFrom,cur){
 // ==========================
 function runRoute(){
 
-  if(jawa.length===0){
-    alert("JSON belum load!");
+  if(islands.length === 0){
+    alert("Data pulau belum load!");
     return;
   }
 
   if(!start || !end){
-    alert("Pilih titik dulu!");
+    alert("Pilih start & end dulu!");
     return;
   }
 
@@ -219,12 +245,13 @@ function runRoute(){
 // RESET
 // ==========================
 function resetAll(){
+
   if(startMarker) map.removeLayer(startMarker);
   if(endMarker) map.removeLayer(endMarker);
   if(routeLine) map.removeLayer(routeLine);
 
-  start=null;
-  end=null;
+  start = null;
+  end = null;
 }
 
 </script>
