@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Routing Kapal Multi Pulau</title>
+  <title>Routing Kapal Multi Pulau - 32 Direction</title>
   <meta charset="utf-8" />
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -58,7 +58,7 @@ let end = null;
 let startMarker, endMarker, routeLine;
 
 // ==========================
-// LOAD JSON (MULTI PULAU)
+// LOAD JSON
 // ==========================
 fetch('islands.json')
 .then(res => res.json())
@@ -67,7 +67,7 @@ fetch('islands.json')
   islands = data.islands;
 
   islands.forEach(island => {
-    island.polygon.push(island.polygon[0]); // tutup polygon
+    island.polygon.push(island.polygon[0]);
 
     L.polygon(island.polygon, {
       color:'red'
@@ -189,20 +189,37 @@ function astar(start,end){
 }
 
 // ==========================
-// HELPERS
+// 🔥 32 DIRECTION NEIGHBORS
 // ==========================
 function neighbors(p){
-  let d=[
-    [step,0],[-step,0],[0,step],[0,-step],
-    [step,step],[-step,-step],[step,-step],[-step,step]
-  ];
-  return d.map(v=>[p[0]+v[0],p[1]+v[1]]);
+  let result = [];
+  let directions = 32;
+
+  for(let i = 0; i < directions; i++){
+    let angle = (2 * Math.PI / directions) * i;
+
+    let dx = step * Math.cos(angle);
+    let dy = step * Math.sin(angle);
+
+    result.push([
+      p[0] + dx,
+      p[1] + dy
+    ]);
+  }
+
+  return result;
 }
 
+// ==========================
+// DISTANCE
+// ==========================
 function dist(a,b){
   return Math.hypot(a[0]-b[0], a[1]-b[1]);
 }
 
+// ==========================
+// RECONSTRUCT PATH
+// ==========================
 function reconstruct(cameFrom,cur){
   let path=[cur];
 
@@ -212,6 +229,30 @@ function reconstruct(cameFrom,cur){
   }
 
   return path.reverse();
+}
+
+// ==========================
+// 🔥 SMOOTH PATH
+// ==========================
+function smoothPath(path, factor = 5) {
+  let smooth = [];
+
+  for (let i = 0; i < path.length - 1; i++) {
+    let a = path[i];
+    let b = path[i + 1];
+
+    for (let j = 0; j < factor; j++) {
+      let t = j / factor;
+
+      let lat = a[0] + (b[0] - a[0]) * t;
+      let lng = a[1] + (b[1] - a[1]) * t;
+
+      smooth.push([lat, lng]);
+    }
+  }
+
+  smooth.push(path[path.length - 1]);
+  return smooth;
 }
 
 // ==========================
@@ -229,7 +270,10 @@ function runRoute(){
     return;
   }
 
-  let path = astar(start,end);
+  let rawPath = astar(start,end);
+
+  // 🔥 smoothing diaktifkan
+  let path = smoothPath(rawPath, 8);
 
   if(routeLine) map.removeLayer(routeLine);
 
