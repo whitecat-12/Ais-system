@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Routing Kapal JSON + A*</title>
+  <meta charset="utf-8" />
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+  <style>
+    #map { height: 100vh; }
+
+    .panel {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: white;
+      padding: 10px;
+      border-radius: 10px;
+      z-index: 1000;
+    }
+
+    button {
+      margin: 5px;
+      padding: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="panel">
+  <button onclick="setMode('start')">Start</button>
+  <button onclick="setMode('end')">End</button>
+  <button onclick="runRoute()">Cari Rute</button>
+  <button onclick="resetAll()">Reset</button>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+// ==========================
+// MAP
+// ==========================
+var map = L.map('map').setView([-7,110],6);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+// ==========================
+// GLOBAL STATE
+// ==========================
+let jawa = [];
+let mode = null;
+let start = null;
+let end = null;
+let startMarker, endMarker, routeLine;
+
+// ==========================
+// LOAD JSON
+// ==========================
+fetch('jawa.json')
+.then(res => res.json())
+.then(data => {
+  jawa = data.polygon;
+
+  // pastikan polygon tertutup
+  jawa.push(jawa[0]);
+
+  L.polygon(jawa, {color:'red'}).addTo(map);
+});
+
+// ==========================
+// MODE
+// ==========================
+function setMode(m) {
+  mode = m;
+}
+
+// ==========================
+// CLICK MAP
+// ==========================
+map.on('click', function(e) {
+  let p = [e.latlng.lat, e.latlng.lng];
+
+  if (mode === 'start') {
+    start = p;
+    if (startMarker) map.removeLayer(startMarker);
+    startMarker = L.marker(p).addTo(map);
+  }
+
+  if (mode === 'end') {
+    end = p;
+    if (endMarker) map.removeLayer(endMarker);
+    endMarker = L.marker(p).addTo(map);
+  }
+});
+
+// ==========================
+// POINT IN POLYGON
+// ==========================
+function pointInPolygon(point, vs) {
+  let x = point[0], y = point[1];
+  let inside = false;
+
+  for (let i=0, j=vs.length-1; i<vs.length; j=i++) {
+    let xi=vs[i][0], yi=vs[i][1];
+    let xj=vs[j][0], yj=vs[j][1];
+
+    let intersect = ((yi>y)!=(yj>y)) &&
+      (x < (xj-xi)*(y-yi)/(yj-yi)+xi);
+
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+// ==========================
+// GRID
+// ==========================
+let step = 0.2;
+
+function toKey(p){
+  return p[0].toFixed(2)+","+p[1].toFixed(2);
+}
+
+// ==========================
+// A*
+// ==========================
+function astar(start,end){
+
+  let open=[start];
+  let cameFrom={};
+  let g={}, f={};
+
+  g[toKey(start)] = 0;
+  f[toKey(start)] = dist(start,end);
+
+  while(open.length){
+
+    open.sort((a,b)=>f[toKey(a)]-f[toKey(b)]);
+    let cur=open.shift();
+
+    if(dist(cur,end)<step)
+      return reconstruct(cameFrom,cur);
+
+    for(let n of neighbors(cur)){
+
+      if(pointInPolygon(n,jawa)) continue;
+
+      let k=toKey(n);
+      let temp=g[toKey(cur)] + dist(cur,n);
+
+      if(g[k]==undefined || temp<g[k]){
+        cameFrom[k]=cur;
+        g[k]=temp;
+        f[k]=temp+dist(n,end);
+
+        if(!open.find(p=>toKey(p)==k))
+          open.push(n);
+      }
+    }
+  }
+
+  return [];
+}
+
+// ==========================
+// HELPERS
+// ==========================
+function neighbors(p){
+  let d=[
+    [step,0],[-step,0],[0,step],[0,-step],
+    [step,step],[-step,-step],[step,-step],[-step,step]
+  ];
+  return d.map(v=>[p[0]+v[0],p[1]+v[1]]);
+}
+
+function dist(a,b){
+  return Math.hypot(a[0]-b[0], a[1]-b[1]);
+}
+
+function reconstruct(cameFrom,cur){
+  let path=[cur];
+  while(cameFrom[toKey(cur)]){
+    cur=cameFrom[toKey(cur)];
+    path.push(cur);
+  }
+  return path.reverse();
+}
+
+// ==========================
+// RUN ROUTE
+// ==========================
+function runRoute(){
+
+  if(jawa.length===0){
+    alert("JSON belum load!");
+    return;
+  }
+
+  if(!start || !end){
+    alert("Pilih titik dulu!");
+    return;
+  }
+
+  let path = astar(start,end);
+
+  if(routeLine) map.removeLayer(routeLine);
+
+  routeLine = L.polyline(path,{
+    color:'blue',
+    weight:4
+  }).addTo(map);
+
+  map.fitBounds(routeLine.getBounds());
+}
+
+// ==========================
+// RESET
+// ==========================
+function resetAll(){
+  if(startMarker) map.removeLayer(startMarker);
+  if(endMarker) map.removeLayer(endMarker);
+  if(routeLine) map.removeLayer(routeLine);
+
+  start=null;
+  end=null;
+}
+
+</script>
+
+</body>
+</html>
