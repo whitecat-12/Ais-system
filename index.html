@@ -1,1197 +1,361 @@
 <!DOCTYPE html>
-<html lang="id">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Alat Gambar Garis & Curve - Export Koordinat</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            -webkit-tap-highlight-color: transparent;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            overflow: hidden;
-            position: fixed;
-            width: 100%;
-            height: 100%;
-        }
-        
-        #map {
-            height: 100vh;
-            width: 100%;
-            position: absolute;
-            top: 0;
-            left: 0;
-        }
-        
-        .toolbar {
-            position: absolute;
-            bottom: 20px;
-            left: 10px;
-            right: 10px;
-            z-index: 1000;
-            background: rgba(255,255,255,0.98);
-            padding: 12px;
-            border-radius: 20px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-            backdrop-filter: blur(10px);
-            max-height: 75vh;
-            overflow-y: auto;
-            transition: all 0.3s ease;
-        }
-        
-        .mode-selector {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 12px;
-        }
-        
-        .mode-btn {
-            flex: 1;
-            padding: 10px 8px;
-            border: none;
-            background: #f0f0f0;
-            color: #666;
-            border-radius: 40px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 14px;
-            transition: all 0.3s;
-            text-align: center;
-        }
-        
-        .mode-btn.active {
-            background: #2196F3;
-            color: white;
-        }
-        
-        .mode-btn.line-mode.active {
-            background: #4CAF50;
-        }
-        
-        .mode-btn.curve-mode.active {
-            background: #ff9800;
-        }
-        
-        .action-buttons {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 12px;
-            flex-wrap: wrap;
-        }
-        
-        .action-buttons button {
-            flex: 1;
-            padding: 12px;
-            border: none;
-            border-radius: 40px;
-            font-weight: 600;
-            font-size: 14px;
-            cursor: pointer;
-            transition: all 0.2s;
-            min-width: 100px;
-        }
-        
-        .btn-primary {
-            background: #2196F3;
-            color: white;
-        }
-        
-        .btn-warning {
-            background: #ff9800;
-            color: white;
-        }
-        
-        .btn-danger {
-            background: #f44336;
-            color: white;
-        }
-        
-        .btn-success {
-            background: #4CAF50;
-            color: white;
-        }
-        
-        .btn-export {
-            background: #9C27B0;
-            color: white;
-        }
-        
-        .draw-control {
-            margin-top: 12px;
-            padding-top: 12px;
-            border-top: 1px solid #eee;
-        }
-        
-        .draw-control label {
-            display: block;
-            font-size: 12px;
-            margin-bottom: 5px;
-            color: #666;
-            font-weight: 600;
-        }
-        
-        .draw-control select {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 12px;
-            font-size: 14px;
-            background: white;
-            margin-bottom: 10px;
-        }
-        
-        .current-points-panel {
-            background: #fff3e0;
-            padding: 10px;
-            border-radius: 16px;
-            margin-top: 12px;
-        }
-        
-        .current-points-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            margin-top: 8px;
-            max-height: 100px;
-            overflow-y: auto;
-        }
-        
-        .point-chip {
-            background: #ff9800;
-            color: white;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 11px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        
-        .point-chip:active {
-            transform: scale(0.95);
-        }
-        
-        .objects-list {
-            max-height: 180px;
-            overflow-y: auto;
-            font-size: 11px;
-            background: #f8f9fa;
-            padding: 8px;
-            border-radius: 12px;
-            margin-top: 12px;
-        }
-        
-        .object-item {
-            margin-bottom: 12px;
-            border-bottom: 1px solid #e0e0e0;
-            padding-bottom: 10px;
-        }
-        
-        .object-header {
-            background: #e9ecef;
-            padding: 8px;
-            border-radius: 10px;
-            margin-bottom: 8px;
-            font-weight: 600;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 5px;
-        }
-        
-        .badge {
-            display: inline-block;
-            padding: 3px 8px;
-            border-radius: 12px;
-            font-size: 10px;
-            font-weight: 600;
-        }
-        
-        .badge-line {
-            background: #4CAF50;
-            color: white;
-        }
-        
-        .badge-curve {
-            background: #ff9800;
-            color: white;
-        }
-        
-        .point-item {
-            padding: 6px;
-            margin: 4px 0;
-            background: white;
-            border-left: 3px solid;
-            border-radius: 8px;
-            font-size: 10px;
-        }
-        
-        .delete-btn {
-            background: #f44336;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 11px;
-            margin-top: 8px;
-            width: 100%;
-        }
-        
-        .info-panel {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            right: 10px;
-            z-index: 1000;
-            background: rgba(0,0,0,0.75);
-            color: white;
-            padding: 8px 12px;
-            border-radius: 20px;
-            font-size: 11px;
-            text-align: center;
-            backdrop-filter: blur(8px);
-            pointer-events: none;
-        }
-        
-        .mouse-coords {
-            position: absolute;
-            bottom: 10px;
-            right: 10px;
-            z-index: 1000;
-            background: rgba(0,0,0,0.7);
-            color: #fff;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-family: monospace;
-            font-size: 10px;
-            pointer-events: none;
-        }
-        
-        .toggle-toolbar {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            z-index: 1001;
-            background: #2196F3;
-            color: white;
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-            font-size: 24px;
-            border: none;
-            transition: all 0.3s;
-        }
-        
-        .toggle-toolbar:active {
-            transform: scale(0.95);
-        }
-        
-        /* Modal Export */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.8);
-            z-index: 2000;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .modal.active {
-            display: flex;
-        }
-        
-        .modal-content {
-            background: white;
-            border-radius: 24px;
-            padding: 20px;
-            width: 90%;
-            max-width: 500px;
-            max-height: 80vh;
-            overflow-y: auto;
-        }
-        
-        .modal-content h3 {
-            margin-bottom: 15px;
-            color: #333;
-        }
-        
-        .export-textarea {
-            width: 100%;
-            height: 300px;
-            font-family: 'Courier New', monospace;
-            font-size: 11px;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 12px;
-            resize: vertical;
-            background: #f8f9fa;
-        }
-        
-        .copy-btn {
-            background: #4CAF50;
-            color: white;
-            border: none;
-            padding: 12px;
-            border-radius: 40px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            margin-top: 10px;
-            width: 100%;
-        }
-        
-        .close-modal {
-            background: #f44336;
-            margin-top: 5px;
-        }
-        
-        .export-options {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 12px;
-            flex-wrap: wrap;
-        }
-        
-        .export-option {
-            flex: 1;
-            padding: 8px;
-            background: #e0e0e0;
-            border: none;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-        
-        .export-option.active {
-            background: #2196F3;
-            color: white;
-        }
-        
-        @media (min-width: 768px) {
-            .toolbar {
-                top: 20px;
-                right: 20px;
-                bottom: auto;
-                left: auto;
-                width: 400px;
-                max-height: 90vh;
-            }
-            .toggle-toolbar {
-                display: none;
-            }
-            .info-panel {
-                top: 20px;
-                left: 20px;
-                right: auto;
-                max-width: 350px;
-            }
-        }
-        
-        .toolbar.collapsed {
-            transform: translateY(calc(100% - 60px));
-        }
-        
-        ::-webkit-scrollbar {
-            width: 4px;
-            height: 4px;
-        }
-        
-        ::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 4px;
-        }
-        
-        ::-webkit-scrollbar-thumb {
-            background: #888;
-            border-radius: 4px;
-        }
-        
-        .draggable-marker {
-            cursor: grab;
-        }
-        
-        .draggable-marker:active {
-            cursor: grabbing;
-        }
-    </style>
+  <title>Routing Kapal PRO (Anti Tabrak + Smooth)</title>
+  <meta charset="utf-8" />
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+  <style>
+    #map { height: 100vh; }
+
+    .panel {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: white;
+      padding: 10px;
+      border-radius: 10px;
+      z-index: 1000;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+    }
+
+    button {
+      margin: 5px;
+      padding: 8px;
+      cursor: pointer;
+    }
+  </style>
 </head>
 <body>
-    <div id="map"></div>
-    
-    <button class="toggle-toolbar" id="toggleToolbar">⚙️</button>
-    
-    <div class="toolbar" id="toolbar">
-        <h3 style="text-align:center; margin-bottom:10px; font-size:14px;">🎨 Alat Gambar Garis & Curve</h3>
-        
-        <div class="mode-selector">
-            <button id="lineModeBtn" class="mode-btn line-mode">📏 Garis Lurus</button>
-            <button id="curveModeBtn" class="mode-btn curve-mode active">🔄 Curve</button>
-        </div>
-        
-        <div class="action-buttons">
-            <button id="drawBtn" class="btn-primary">✏️ Mulai Gambar</button>
-            <button id="undoPointBtn" class="btn-warning" style="display:none;">↩️ Undo</button>
-        </div>
-        
-        <div class="action-buttons">
-            <button id="clearAllBtn" class="btn-danger">🗑️ Hapus Semua</button>
-            <button id="exportBtn" class="btn-export">📋 Export Koordinat</button>
-        </div>
-        
-        <div class="draw-control" id="curveControl">
-            <label>Tipe Curve:</label>
-            <select id="curveType">
-                <option value="quadratic">Quadratic Bezier (3 titik)</option>
-                <option value="cubic">Cubic Bezier (4 titik)</option>
-                <option value="cardinal">Cardinal Spline (min. 2 titik)</option>
-            </select>
-            
-            <label>Warna:</label>
-            <select id="drawColor">
-                <option value="#FF6B6B">🔴 Merah</option>
-                <option value="#4ECDC4">🔵 Biru Toska</option>
-                <option value="#45B7D1">💙 Biru Muda</option>
-                <option value="#96CEB4">💚 Hijau</option>
-                <option value="#FFEAA7">💛 Kuning</option>
-                <option value="#DDA0DD">💜 Ungu</option>
-                <option value="#FF8C42">🟠 Oranye</option>
-            </select>
-        </div>
-        
-        <div id="currentPointsPanel" class="current-points-panel" style="display:none;">
-            <strong>📌 Titik Saat Ini:</strong>
-            <div id="currentPointsList" class="current-points-list"></div>
-            <button id="clearCurrentPointsBtn" style="margin-top:8px; width:100%; padding:8px; background:#ff9800; border:none; border-radius:20px; color:white; font-size:12px;">🗑️ Hapus Semua Titik</button>
-        </div>
-        
-        <div style="margin-top: 12px;">
-            <label>📋 Daftar Objek (✨ Geser titik untuk mengubah):</label>
-            <div class="objects-list" id="objectsList">
-                <div style="color:#999; text-align:center; padding:20px;">Belum ada garis/curve</div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="info-panel" id="infoPanel">
-        💡 Pilih mode: Garis Lurus atau Curve
-    </div>
-    
-    <div class="mouse-coords" id="mouseCoords">
-        🖱️ --, --
-    </div>
-    
-    <!-- Modal Export -->
-    <div id="exportModal" class="modal">
-        <div class="modal-content">
-            <h3>📋 Export Koordinat</h3>
-            <div class="export-options">
-                <button class="export-option active" data-export-type="all">Semua Objek</button>
-                <button class="export-option" data-export-type="selected">Pilih Objek</button>
-            </div>
-            <select id="objectSelector" style="display:none; width:100%; padding:10px; margin-bottom:12px; border-radius:12px;">
-                <option value="">Pilih objek...</option>
-            </select>
-            <textarea id="exportText" class="export-textarea" readonly placeholder="Klik Export untuk melihat data koordinat..."></textarea>
-            <button id="copyBtn" class="copy-btn">📋 Copy ke Clipboard</button>
-            <button id="closeModalBtn" class="copy-btn close-modal">Tutup</button>
-        </div>
-    </div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
-    
-    <script>
-        // Inisialisasi peta
-        const map = L.map('map').setView([-6.2, 106.816666], 12);
-        
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors',
-            maxZoom: 19
-        }).addTo(map);
-        
-        // Variabel global
-        let currentObject = null;
-        let controlPoints = [];
-        let allObjects = [];
-        let isDrawingMode = false;
-        let tempMarkers = [];
-        let currentMode = 'curve';
-        
-        // Referensi elemen
-        const drawBtn = document.getElementById('drawBtn');
-        const lineModeBtn = document.getElementById('lineModeBtn');
-        const curveModeBtn = document.getElementById('curveModeBtn');
-        const undoPointBtn = document.getElementById('undoPointBtn');
-        const clearAllBtn = document.getElementById('clearAllBtn');
-        const clearCurrentPointsBtn = document.getElementById('clearCurrentPointsBtn');
-        const curveType = document.getElementById('curveType');
-        const drawColor = document.getElementById('drawColor');
-        const objectsList = document.getElementById('objectsList');
-        const infoPanel = document.getElementById('infoPanel');
-        const mouseCoords = document.getElementById('mouseCoords');
-        const currentPointsPanel = document.getElementById('currentPointsPanel');
-        const currentPointsList = document.getElementById('currentPointsList');
-        const curveControl = document.getElementById('curveControl');
-        const toolbar = document.getElementById('toolbar');
-        const toggleToolbar = document.getElementById('toggleToolbar');
-        const exportBtn = document.getElementById('exportBtn');
-        const exportModal = document.getElementById('exportModal');
-        const exportText = document.getElementById('exportText');
-        const copyBtn = document.getElementById('copyBtn');
-        const closeModalBtn = document.getElementById('closeModalBtn');
-        const objectSelector = document.getElementById('objectSelector');
-        const exportOptions = document.querySelectorAll('.export-option');
-        
-        let currentExportType = 'all';
-        
-        toggleToolbar.addEventListener('click', () => {
-            toolbar.classList.toggle('collapsed');
-        });
-        
-        map.on('mousemove', function(e) {
-            const lat = e.latlng.lat.toFixed(6);
-            const lng = e.latlng.lng.toFixed(6);
-            mouseCoords.innerHTML = `🖱️ ${lat}°, ${lng}°`;
-        });
-        
-        function formatCoord(lat, lng) {
-            return `${lat.toFixed(6)}°, ${lng.toFixed(6)}°`;
+<div class="panel">
+  <button onclick="setMode('start')">Start</button>
+  <button onclick="setMode('end')">End</button>
+  <button onclick="runRoute()">Cari Rute</button>
+  <button onclick="resetAll()">Reset</button>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+// ==========================
+// MAP
+// ==========================
+var map = L.map('map').setView([-7,110],6);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+// ==========================
+// STATE
+// ==========================
+let islands = [];
+let mode = null;
+let start = null;
+let end = null;
+let startMarker, endMarker, routeLine;
+
+// ==========================
+// LOAD JSON
+// ==========================
+fetch('islands.json')
+.then(res => res.json())
+.then(data => {
+
+  islands = data.islands;
+
+  islands.forEach(island => {
+    island.polygon.push(island.polygon[0]);
+
+    L.polygon(island.polygon, {
+      color:'red'
+    }).addTo(map);
+  });
+
+});
+
+// ==========================
+// MODE
+// ==========================
+function setMode(m){
+  mode = m;
+}
+
+// ==========================
+// CLICK MAP
+// ==========================
+map.on('click', function(e){
+
+  let p = [e.latlng.lat, e.latlng.lng];
+
+  if(mode === 'start'){
+    start = p;
+    if(startMarker) map.removeLayer(startMarker);
+    startMarker = L.marker(p).addTo(map).bindPopup("Start");
+  }
+
+  if(mode === 'end'){
+    end = p;
+    if(endMarker) map.removeLayer(endMarker);
+    endMarker = L.marker(p).addTo(map).bindPopup("End");
+  }
+
+});
+
+// ==========================
+// POINT IN POLYGON
+// ==========================
+function pointInPolygon(point, vs){
+  let x = point[0], y = point[1];
+  let inside = false;
+
+  for(let i=0, j=vs.length-1; i<vs.length; j=i++){
+    let xi=vs[i][0], yi=vs[i][1];
+    let xj=vs[j][0], yj=vs[j][1];
+
+    let intersect = ((yi>y)!=(yj>y)) &&
+      (x < (xj-xi)*(y-yi)/(yj-yi)+xi);
+
+    if(intersect) inside = !inside;
+  }
+
+  return inside;
+}
+
+// ==========================
+// CEK GARIS TABRAKAN
+// ==========================
+function lineIntersectsPolygon(a, b, polygon) {
+
+  for (let i = 0; i < polygon.length - 1; i++) {
+    let c = polygon[i];
+    let d = polygon[i + 1];
+
+    if (linesIntersect(a, b, c, d)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function linesIntersect(a,b,c,d){
+
+  function ccw(p1,p2,p3){
+    return (p3[0]-p1[0])*(p2[1]-p1[1]) >
+           (p2[0]-p1[0])*(p3[1]-p1[1]);
+  }
+
+  return (ccw(a,c,d) != ccw(b,c,d)) &&
+         (ccw(a,b,c) != ccw(a,b,d));
+}
+
+// ==========================
+// CEK BLOCK (dengan buffer)
+// ==========================
+function isBlocked(point){
+
+  let buffer = 0.05; // ~5km
+
+  for(let island of islands){
+
+    if(pointInPolygon(point, island.polygon)){
+      return true;
+    }
+
+    for(let p of island.polygon){
+      let d = Math.hypot(point[0]-p[0], point[1]-p[1]);
+      if(d < buffer){
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+// ==========================
+// GRID
+// ==========================
+let step = 0.05;
+
+function toKey(p){
+  return p[0].toFixed(3)+","+p[1].toFixed(3);
+}
+
+// ==========================
+// A*
+// ==========================
+function astar(start,end){
+
+  let open=[start];
+  let cameFrom={};
+  let g={}, f={};
+
+  g[toKey(start)] = 0;
+  f[toKey(start)] = dist(start,end);
+
+  while(open.length){
+
+    open.sort((a,b)=>f[toKey(a)]-f[toKey(b)]);
+    let cur = open.shift();
+
+    if(dist(cur,end) < step){
+      return reconstruct(cameFrom,cur);
+    }
+
+    for(let n of neighbors(cur)){
+
+      if(isBlocked(n)) continue;
+
+      // 🔥 CEK GARIS TABRAKAN
+      let collision = false;
+
+      for (let island of islands) {
+        if (lineIntersectsPolygon(cur, n, island.polygon)) {
+          collision = true;
+          break;
         }
-        
-        // Format koordinat untuk export: [latitude, longitude]
-        function formatForExport(points) {
-            return points.map(p => `    [${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}]`).join(',\n');
+      }
+
+      if (collision) continue;
+
+      let key = toKey(n);
+      let temp = g[toKey(cur)] + dist(cur,n);
+
+      if(g[key] === undefined || temp < g[key]){
+        cameFrom[key] = cur;
+        g[key] = temp;
+        f[key] = temp + dist(n,end);
+
+        if(!open.find(p => toKey(p) === key)){
+          open.push(n);
         }
-        
-        // Export semua koordinat dari semua objek
-        function exportAllCoordinates() {
-            if (allObjects.length === 0) {
-                return '// Belum ada data koordinat\n[]';
-            }
-            
-            let allPoints = [];
-            allObjects.forEach(obj => {
-                allPoints.push(...obj.points);
-            });
-            
-            return `[\n${formatForExport(allPoints)}\n]`;
-        }
-        
-        // Export koordinat dari objek tertentu
-        function exportObjectCoordinates(index) {
-            if (index < 0 || index >= allObjects.length) return '[]';
-            const obj = allObjects[index];
-            return `// ${obj.type}\n[\n${formatForExport(obj.points)}\n]`;
-        }
-        
-        // Update selector objek
-        function updateObjectSelector() {
-            objectSelector.innerHTML = '<option value="">Pilih objek...</option>';
-            allObjects.forEach((obj, idx) => {
-                const option = document.createElement('option');
-                option.value = idx;
-                option.textContent = `${obj.type} ${idx + 1} (${obj.points.length} titik)`;
-                objectSelector.appendChild(option);
-            });
-        }
-        
-        // Tampilkan export modal
-        function showExportModal() {
-            updateObjectSelector();
-            
-            if (currentExportType === 'all') {
-                exportText.value = exportAllCoordinates();
-                objectSelector.style.display = 'none';
-            } else {
-                objectSelector.style.display = 'block';
-                if (objectSelector.value !== '') {
-                    exportText.value = exportObjectCoordinates(parseInt(objectSelector.value));
-                } else {
-                    exportText.value = '// Pilih objek terlebih dahulu';
-                }
-            }
-            exportModal.classList.add('active');
-        }
-        
-        // Export options
-        exportOptions.forEach(option => {
-            option.addEventListener('click', () => {
-                exportOptions.forEach(opt => opt.classList.remove('active'));
-                option.classList.add('active');
-                currentExportType = option.dataset.exportType;
-                
-                if (currentExportType === 'all') {
-                    objectSelector.style.display = 'none';
-                    exportText.value = exportAllCoordinates();
-                } else {
-                    objectSelector.style.display = 'block';
-                    if (objectSelector.value !== '') {
-                        exportText.value = exportObjectCoordinates(parseInt(objectSelector.value));
-                    } else {
-                        exportText.value = '// Pilih objek terlebih dahulu';
-                    }
-                }
-            });
-        });
-        
-        objectSelector.addEventListener('change', () => {
-            if (objectSelector.value !== '') {
-                exportText.value = exportObjectCoordinates(parseInt(objectSelector.value));
-            } else {
-                exportText.value = '// Pilih objek terlebih dahulu';
-            }
-        });
-        
-        // Copy ke clipboard
-        copyBtn.addEventListener('click', async () => {
-            const text = exportText.value;
-            if (text && text !== '// Pilih objek terlebih dahulu' && text !== '// Belum ada data koordinat\n[]') {
-                try {
-                    await navigator.clipboard.writeText(text);
-                    infoPanel.innerHTML = '✅ Koordinat berhasil disalin ke clipboard!';
-                    setTimeout(() => {
-                        infoPanel.innerHTML = '💡 Geser titik pada curve untuk mengubah bentuk!';
-                    }, 2000);
-                } catch (err) {
-                    infoPanel.innerHTML = '❌ Gagal menyalin: ' + err;
-                }
-            } else {
-                infoPanel.innerHTML = '⚠️ Tidak ada data koordinat untuk diexport';
-            }
-        });
-        
-        closeModalBtn.addEventListener('click', () => {
-            exportModal.classList.remove('active');
-        });
-        
-        exportBtn.addEventListener('click', showExportModal);
-        
-        // Tutup modal dengan klik di luar
-        exportModal.addEventListener('click', (e) => {
-            if (e.target === exportModal) {
-                exportModal.classList.remove('active');
-            }
-        });
-        
-        // Fungsi untuk memperbarui curve setelah titik digeser
-        function regenerateObject(objIndex) {
-            const obj = allObjects[objIndex];
-            if (!obj) return;
-            
-            map.removeLayer(obj.layer);
-            if (obj.markers) {
-                obj.markers.forEach(m => map.removeLayer(m));
-            }
-            
-            const isLine = obj.type === 'Garis Lurus';
-            const newObj = createObject(obj.points, isLine ? 'line' : 'curve', obj.color, true);
-            
-            if (newObj) {
-                obj.layer = newObj.layer;
-                obj.markers = newObj.markers;
-                
-                obj.markers.forEach((marker, idx) => {
-                    marker.off('dragend');
-                    marker.on('dragend', function(e) {
-                        const newLatLng = marker.getLatLng();
-                        obj.points[idx] = { lat: newLatLng.lat, lng: newLatLng.lng };
-                        regenerateObject(objIndex);
-                        updateObjectsList();
-                        infoPanel.innerHTML = `✨ Titik ${idx + 1} digeser ke (${newLatLng.lat.toFixed(6)}, ${newLatLng.lng.toFixed(6)})`;
-                        setTimeout(() => {
-                            infoPanel.innerHTML = '💡 Geser titik lain untuk mengubah bentuk curve/garis';
-                        }, 2000);
-                    });
-                });
-            }
-            updateObjectsList();
-        }
-        
-        function createLine(points, color, addMarkers = false) {
-            if (points.length < 2) return null;
-            
-            const latlngs = points.map(p => [p.lat, p.lng]);
-            const lineLayer = L.polyline(latlngs, {
-                color: color,
-                weight: 5,
-                opacity: 0.9,
-                smoothFactor: 1
-            });
-            
-            lineLayer.addTo(map);
-            
-            let markers = [];
-            if (addMarkers) {
-                points.forEach((point, idx) => {
-                    const marker = L.marker([point.lat, point.lng], {
-                        draggable: true,
-                        icon: L.divIcon({
-                            className: 'draggable-marker',
-                            html: `<div style="background: ${color}; width: 18px; height: 18px; border-radius: 4px; border: 2px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>`,
-                            iconSize: [18, 18]
-                        })
-                    }).addTo(map);
-                    
-                    marker.bindPopup(`
-                        <b>Titik ${idx + 1}</b><br>
-                        📍 Lat: ${point.lat.toFixed(6)}°<br>
-                        📍 Lng: ${point.lng.toFixed(6)}°<br>
-                        <span style="color:#4CAF50;">✨ Geser untuk memindahkan</span>
-                    `);
-                    
-                    markers.push(marker);
-                });
-            }
-            
-            return { layer: lineLayer, markers: markers };
-        }
-        
-        function createCurve(points, type, color, addMarkers = false) {
-            if (points.length < 2) return null;
-            
-            let curveLayer = null;
-            
-            try {
-                switch(type) {
-                    case 'quadratic':
-                        if (points.length < 3) return null;
-                        const quadraticPoints = [];
-                        for (let i = 0; i < points.length - 2; i++) {
-                            const p1 = points[i];
-                            const p2 = points[i+1];
-                            const p3 = points[i+2];
-                            for (let t = 0; t <= 1; t += 0.05) {
-                                const x = Math.pow(1-t,2)*p1.lat + 2*(1-t)*t*p2.lat + Math.pow(t,2)*p3.lat;
-                                const y = Math.pow(1-t,2)*p1.lng + 2*(1-t)*t*p2.lng + Math.pow(t,2)*p3.lng;
-                                quadraticPoints.push([x, y]);
-                            }
-                        }
-                        curveLayer = L.polyline(quadraticPoints, { color: color, weight: 5, opacity: 0.9 });
-                        break;
-                        
-                    case 'cubic':
-                        if (points.length < 4) return null;
-                        const cubicPoints = [];
-                        for (let i = 0; i < points.length - 3; i++) {
-                            const p1 = points[i];
-                            const p2 = points[i+1];
-                            const p3 = points[i+2];
-                            const p4 = points[i+3];
-                            for (let t = 0; t <= 1; t += 0.05) {
-                                const x = Math.pow(1-t,3)*p1.lat + 3*Math.pow(1-t,2)*t*p2.lat + 3*(1-t)*Math.pow(t,2)*p3.lat + Math.pow(t,3)*p4.lat;
-                                const y = Math.pow(1-t,3)*p1.lng + 3*Math.pow(1-t,2)*t*p2.lng + 3*(1-t)*Math.pow(t,2)*p3.lng + Math.pow(t,3)*p4.lng;
-                                cubicPoints.push([x, y]);
-                            }
-                        }
-                        curveLayer = L.polyline(cubicPoints, { color: color, weight: 5, opacity: 0.9 });
-                        break;
-                        
-                    case 'cardinal':
-                        function getCardinalPoints(points, tension = 0.5, segments = 50) {
-                            const result = [];
-                            for (let i = 0; i < points.length - 1; i++) {
-                                const p0 = points[i > 0 ? i-1 : i];
-                                const p1 = points[i];
-                                const p2 = points[i+1];
-                                const p3 = points[i+2 < points.length ? i+2 : i+1];
-                                
-                                for (let t = 0; t <= 1; t += 1/segments) {
-                                    const t2 = t * t;
-                                    const t3 = t2 * t;
-                                    const x = 0.5 * ((-t3 + 2*t2 - t) * p0.lat + (3*t3 - 5*t2 + 2) * p1.lat + (-3*t3 + 4*t2 + t) * p2.lat + (t3 - t2) * p3.lat);
-                                    const y = 0.5 * ((-t3 + 2*t2 - t) * p0.lng + (3*t3 - 5*t2 + 2) * p1.lng + (-3*t3 + 4*t2 + t) * p2.lng + (t3 - t2) * p3.lng);
-                                    result.push([x, y]);
-                                }
-                            }
-                            return result;
-                        }
-                        const cardinalPoints = getCardinalPoints(points);
-                        curveLayer = L.polyline(cardinalPoints, { color: color, weight: 5, opacity: 0.9 });
-                        break;
-                }
-                
-                if (curveLayer) {
-                    curveLayer.addTo(map);
-                    
-                    let markers = [];
-                    if (addMarkers) {
-                        points.forEach((point, idx) => {
-                            const marker = L.marker([point.lat, point.lng], {
-                                draggable: true,
-                                icon: L.divIcon({
-                                    className: 'draggable-marker',
-                                    html: `<div style="background: ${color}; width: 18px; height: 18px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>`,
-                                    iconSize: [18, 18]
-                                })
-                            }).addTo(map);
-                            
-                            marker.bindPopup(`
-                                <b>Titik Kontrol ${idx + 1}</b><br>
-                                📍 Lat: ${point.lat.toFixed(6)}°<br>
-                                📍 Lng: ${point.lng.toFixed(6)}°<br>
-                                <span style="color:#ff9800;">✨ Geser untuk mengubah kurva</span>
-                            `);
-                            
-                            markers.push(marker);
-                        });
-                    }
-                    
-                    return { layer: curveLayer, markers: markers };
-                }
-            } catch(e) {
-                console.error('Error:', e);
-            }
-            return null;
-        }
-        
-        function createObject(points, mode, color, addMarkers = false) {
-            if (mode === 'line') {
-                return createLine(points, color, addMarkers);
-            } else {
-                return createCurve(points, curveType.value, color, addMarkers);
-            }
-        }
-        
-        function getObjectType(mode, curveTypeValue = null) {
-            if (mode === 'line') return 'Garis Lurus';
-            if (curveTypeValue === 'quadratic') return 'Quadratic Bezier';
-            if (curveTypeValue === 'cubic') return 'Cubic Bezier';
-            return 'Cardinal Spline';
-        }
-        
-        function updateObjectsList() {
-            if (allObjects.length === 0) {
-                objectsList.innerHTML = '<div style="color:#999; text-align:center; padding:20px;">✨ Belum ada garis/curve<br>✨ Buat dulu, lalu geser titiknya!</div>';
-                return;
-            }
-            
-            let html = '';
-            allObjects.forEach((obj, idx) => {
-                const isLine = obj.type === 'Garis Lurus';
-                html += `<div class="object-item">`;
-                html += `<div class="object-header">`;
-                html += `<strong>${isLine ? '📏' : '🔄'} ${obj.type} ${idx + 1}</strong>`;
-                html += `<span class="badge ${isLine ? 'badge-line' : 'badge-curve'}">${isLine ? 'Garis' : 'Curve'}</span>`;
-                html += `</div>`;
-                html += `<div class="point-list">`;
-                obj.points.forEach((point, pointIdx) => {
-                    html += `<div class="point-item" style="border-left-color: ${obj.color};">`;
-                    html += `<strong>Titik ${pointIdx + 1}</strong><br>`;
-                    html += `Lat: ${point.lat.toFixed(6)}°<br>`;
-                    html += `Lng: ${point.lng.toFixed(6)}°`;
-                    html += `</div>`;
-                });
-                html += `<button class="delete-btn" onclick="deleteObject(${idx})">🗑️ Hapus Ini</button>`;
-                html += `</div></div>`;
-            });
-            objectsList.innerHTML = html;
-        }
-        
-        window.deleteObject = function(index) {
-            if (allObjects[index] && allObjects[index].layer) {
-                map.removeLayer(allObjects[index].layer);
-                if (allObjects[index].markers) {
-                    allObjects[index].markers.forEach(marker => map.removeLayer(marker));
-                }
-            }
-            allObjects.splice(index, 1);
-            updateObjectsList();
-            infoPanel.innerHTML = '🗑️ Objek dihapus';
-            setTimeout(() => {
-                if (!isDrawingMode) infoPanel.innerHTML = '💡 Buat curve/garis baru, lalu geser titiknya!';
-            }, 1500);
-        };
-        
-        function updateCurrentPointsDisplay() {
-            if (controlPoints.length === 0) {
-                currentPointsList.innerHTML = '<span style="color:#999;">Belum ada titik</span>';
-                return;
-            }
-            
-            let html = '';
-            controlPoints.forEach((point, idx) => {
-                html += `<div class="point-chip" onclick="deletePoint(${idx})">${idx + 1}. ${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}</div>`;
-            });
-            currentPointsList.innerHTML = html;
-        }
-        
-        window.deletePoint = function(index) {
-            if (index >= 0 && index < controlPoints.length) {
-                controlPoints.splice(index, 1);
-                showControlPoints(controlPoints);
-                updateCurrentPointsDisplay();
-                
-                if (currentObject) {
-                    map.removeLayer(currentObject);
-                    currentObject = null;
-                }
-                
-                if (controlPoints.length >= 2) {
-                    const preview = createObject(controlPoints, currentMode, '#CCCCCC', false);
-                    if (preview) {
-                        currentObject = preview.layer;
-                        preview.layer.setStyle({ opacity: 0.5, weight: 3 });
-                    }
-                }
-                infoPanel.innerHTML = `🗑️ Titik dihapus, sisa ${controlPoints.length} titik`;
-            }
-        };
-        
-        function clearAllCurrentPoints() {
-            if (controlPoints.length > 0 && confirm('Hapus semua titik?')) {
-                controlPoints = [];
-                showControlPoints(controlPoints);
-                updateCurrentPointsDisplay();
-                if (currentObject) {
-                    map.removeLayer(currentObject);
-                    currentObject = null;
-                }
-                infoPanel.innerHTML = '🗑️ Semua titik dihapus';
-            }
-        }
-        
-        function undoLastPoint() {
-            if (controlPoints.length > 0) {
-                controlPoints.pop();
-                showControlPoints(controlPoints);
-                updateCurrentPointsDisplay();
-                
-                if (currentObject) {
-                    map.removeLayer(currentObject);
-                    currentObject = null;
-                }
-                
-                if (controlPoints.length >= 2) {
-                    const preview = createObject(controlPoints, currentMode, '#CCCCCC', false);
-                    if (preview) {
-                        currentObject = preview.layer;
-                        preview.layer.setStyle({ opacity: 0.5, weight: 3 });
-                    }
-                }
-                infoPanel.innerHTML = `↩️ Undo, sisa ${controlPoints.length} titik`;
-            }
-        }
-        
-        function showControlPoints(points) {
-            tempMarkers.forEach(marker => map.removeLayer(marker));
-            tempMarkers = [];
-            
-            points.forEach((point, idx) => {
-                const marker = L.marker([point.lat, point.lng], {
-                    icon: L.divIcon({
-                        className: 'temp-marker',
-                        html: `<div style="background: #FF6B6B; width: 14px; height: 14px; border-radius: ${currentMode === 'line' ? '3px' : '50%'}; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.5);"></div>`,
-                        iconSize: [14, 14]
-                    })
-                }).addTo(map);
-                
-                marker.bindTooltip(`Titik ${idx + 1}\n${formatCoord(point.lat, point.lng)}`, { direction: 'top' });
-                marker.on('click', () => deletePoint(idx));
-                tempMarkers.push(marker);
-            });
-        }
-        
-        function onMapClick(e) {
-            if (!isDrawingMode) return;
-            
-            const { lat, lng } = e.latlng;
-            controlPoints.push({ lat, lng });
-            
-            showControlPoints(controlPoints);
-            updateCurrentPointsDisplay();
-            
-            if (currentObject) {
-                map.removeLayer(currentObject);
-                currentObject = null;
-            }
-            
-            if (controlPoints.length >= 2) {
-                const preview = createObject(controlPoints, currentMode, '#CCCCCC', false);
-                if (preview) {
-                    currentObject = preview.layer;
-                    preview.layer.setStyle({ opacity: 0.5, weight: 3 });
-                }
-            }
-            
-            infoPanel.innerHTML = `📍 Titik ${controlPoints.length} ditambahkan<br>✨ ${formatCoord(lat, lng)}`;
-        }
-        
-        function finishDrawing() {
-            if (!isDrawingMode) return;
-            
-            if (controlPoints.length < 2) {
-                alert('Minimal 2 titik diperlukan!');
-                return;
-            }
-            
-            const minPoints = (currentMode === 'curve' && curveType.value === 'quadratic') ? 3 :
-                              (currentMode === 'curve' && curveType.value === 'cubic') ? 4 : 2;
-            
-            if (controlPoints.length < minPoints) {
-                alert(`Butuh minimal ${minPoints} titik untuk ${currentMode === 'line' ? 'garis' : 'curve'} ini!`);
-                return;
-            }
-            
-            const finalObject = createObject(controlPoints, currentMode, drawColor.value, true);
-            if (finalObject) {
-                finalObject.layer.setStyle({ opacity: 0.9, weight: 5 });
-                const objectIndex = allObjects.length;
-                
-                allObjects.push({
-                    layer: finalObject.layer,
-                    type: getObjectType(currentMode, curveType.value),
-                    points: [...controlPoints],
-                    color: drawColor.value,
-                    markers: finalObject.markers
-                });
-                
-                finalObject.markers.forEach((marker, idx) => {
-                    marker.on('dragend', function(e) {
-                        const newLatLng = marker.getLatLng();
-                        allObjects[objectIndex].points[idx] = { lat: newLatLng.lat, lng: newLatLng.lng };
-                        regenerateObject(objectIndex);
-                        updateObjectsList();
-                        infoPanel.innerHTML = `✨ Titik ${idx + 1} digeser ke (${newLatLng.lat.toFixed(6)}, ${newLatLng.lng.toFixed(6)})`;
-                        setTimeout(() => {
-                            infoPanel.innerHTML = '💡 Geser titik lain untuk mengubah bentuk curve/garis';
-                        }, 2000);
-                    });
-                });
-                
-                updateObjectsList();
-                infoPanel.innerHTML = `✅ ${currentMode === 'line' ? 'Garis' : 'Curve'} selesai! ✨ Sekarang geser titik-titiknya untuk mengubah bentuk!`;
-            }
-            
-            resetDrawingMode();
-        }
-        
-        function resetDrawingMode() {
-            isDrawingMode = false;
-            controlPoints = [];
-            tempMarkers.forEach(m => map.removeLayer(m));
-            tempMarkers = [];
-            if (currentObject) {
-                map.removeLayer(currentObject);
-                currentObject = null;
-            }
-            map.off('click', onMapClick);
-            drawBtn.textContent = '✏️ Mulai Gambar';
-            drawBtn.className = 'btn-primary';
-            undoPointBtn.style.display = 'none';
-            currentPointsPanel.style.display = 'none';
-        }
-        
-        function startDrawingMode() {
-            if (isDrawingMode) {
-                finishDrawing();
-                return;
-            }
-            
-            resetDrawingMode();
-            isDrawingMode = true;
-            controlPoints = [];
-            map.on('click', onMapClick);
-            drawBtn.textContent = '✅ Selesai';
-            drawBtn.className = 'btn-success';
-            undoPointBtn.style.display = 'block';
-            currentPointsPanel.style.display = 'block';
-            updateCurrentPointsDisplay();
-            infoPanel.innerHTML = `🎨 Mode ${currentMode === 'line' ? 'Garis' : 'Curve'} aktif! Klik peta untuk titik.<br>✨ Setelah selesai, geser titik untuk mengubah bentuk!`;
-        }
-        
-        function clearAllObjects() {
-            if (confirm('Hapus semua garis dan curve?')) {
-                allObjects.forEach(obj => {
-                    if (obj.layer) map.removeLayer(obj.layer);
-                    if (obj.markers) obj.markers.forEach(m => map.removeLayer(m));
-                });
-                allObjects = [];
-                updateObjectsList();
-                resetDrawingMode();
-                infoPanel.innerHTML = '🗑️ Semua dihapus';
-                setTimeout(() => {
-                    infoPanel.innerHTML = '💡 Buat curve/garis baru, lalu geser titiknya!';
-                }, 1500);
-            }
-        }
-        
-        function setMode(mode) {
-            currentMode = mode;
-            if (mode === 'line') {
-                lineModeBtn.classList.add('active');
-                curveModeBtn.classList.remove('active');
-                curveControl.style.opacity = '0.5';
-                infoPanel.innerHTML = '📏 Mode Garis Lurus aktif! ✨ Buat garis, lalu geser titiknya!';
-            } else {
-                curveModeBtn.classList.add('active');
-                lineModeBtn.classList.remove('active');
-                curveControl.style.opacity = '1';
-                infoPanel.innerHTML = '🔄 Mode Curve aktif! ✨ Buat kurva, lalu geser titiknya!';
-            }
-            if (isDrawingMode) resetDrawingMode();
-        }
-        
-        drawBtn.addEventListener('click', startDrawingMode);
-        undoPointBtn.addEventListener('click', undoLastPoint);
-        clearAllBtn.addEventListener('click', clearAllObjects);
-        clearCurrentPointsBtn.addEventListener('click', clearAllCurrentPoints);
-        lineModeBtn.addEventListener('click', () => setMode('line'));
-        curveModeBtn.addEventListener('click', () => setMode('curve'));
-        
-        // Demo curve
-        setTimeout(() => {
-            const demoPoints = [
-                { lat: -6.2, lng: 106.8 },
-                { lat: -6.21, lng: 106.82 },
-                { lat: -6.19, lng: 106.84 },
-                { lat: -6.18, lng: 106.83 }
-            ];
-            const demoCurve = createCurve(demoPoints, 'cardinal', '#FF6B6B', true);
-            if (demoCurve) {
-                const objIndex = allObjects.length;
-                allObjects.push({
-                    layer: demoCurve.layer,
-                    type: 'Cardinal Spline',
-                    points: demoPoints,
-                    color: '#FF6B6B',
-                    markers: demoCurve.markers
-                });
-                
-                demoCurve.markers.forEach((marker, idx) => {
-                    marker.on('dragend', function(e) {
-                        const newLatLng = marker.getLatLng();
-                        allObjects[objIndex].points[idx] = { lat: newLatLng.lat, lng: newLatLng.lng };
-                        regenerateObject(objIndex);
-                        updateObjectsList();
-                    });
-                });
-                
-                updateObjectsList();
-                infoPanel.innerHTML = '✨ Demo curve siap! ✨ COBA GESER titik-titiknya untuk mengubah bentuk kurva!';
-                setTimeout(() => {
-                    infoPanel.innerHTML = '💡 Geser titik pada curve untuk mengubah bentuk! Klik "Export Koordinat" untuk mengambil data';
-                }, 5000);
-            }
-        }, 1000);
-        
-        L.control.attribution({ position: 'bottomright' }).addTo(map);
-    </script>
+      }
+    }
+  }
+
+  return [];
+}
+
+// ==========================
+// 🔥 32 DIRECTION
+// ==========================
+function neighbors(p){
+  let result = [];
+  let directions = 32;
+
+  for(let i = 0; i < directions; i++){
+    let angle = (2 * Math.PI / directions) * i;
+
+    let dx = step * Math.cos(angle);
+    let dy = step * Math.sin(angle);
+
+    result.push([
+      p[0] + dx,
+      p[1] + dy
+    ]);
+  }
+
+  return result;
+}
+
+// ==========================
+// DISTANCE
+// ==========================
+function dist(a,b){
+  return Math.hypot(a[0]-b[0], a[1]-b[1]);
+}
+
+// ==========================
+// RECONSTRUCT
+// ==========================
+function reconstruct(cameFrom,cur){
+  let path=[cur];
+
+  while(cameFrom[toKey(cur)]){
+    cur = cameFrom[toKey(cur)];
+    path.push(cur);
+  }
+
+  return path.reverse();
+}
+
+// ==========================
+// 🔥 SMOOTH BEZIER
+// ==========================
+function smoothPath(path){
+
+  if(path.length < 3) return path;
+
+  let smooth = [];
+
+  for (let i = 0; i < path.length - 2; i++) {
+
+    let p0 = path[i];
+    let p1 = path[i + 1];
+    let p2 = path[i + 2];
+
+    for (let t = 0; t <= 1; t += 0.2) {
+
+      let lat = (1-t)*(1-t)*p0[0] + 
+                2*(1-t)*t*p1[0] + 
+                t*t*p2[0];
+
+      let lng = (1-t)*(1-t)*p0[1] + 
+                2*(1-t)*t*p1[1] + 
+                t*t*p2[1];
+
+      smooth.push([lat,lng]);
+    }
+  }
+
+  return smooth;
+}
+
+// ==========================
+// RUN
+// ==========================
+function runRoute(){
+
+  if(islands.length === 0){
+    alert("Data pulau belum load!");
+    return;
+  }
+
+  if(!start || !end){
+    alert("Pilih start & end dulu!");
+    return;
+  }
+
+  let rawPath = astar(start,end);
+  let path = smoothPath(rawPath);
+
+  if(routeLine) map.removeLayer(routeLine);
+
+  routeLine = L.polyline(path,{
+    color:'blue',
+    weight:4
+  }).addTo(map);
+
+  map.fitBounds(routeLine.getBounds());
+}
+
+// ==========================
+// RESET
+// ==========================
+function resetAll(){
+
+  if(startMarker) map.removeLayer(startMarker);
+  if(endMarker) map.removeLayer(endMarker);
+  if(routeLine) map.removeLayer(routeLine);
+
+  start = null;
+  end = null;
+}
+
+</script>
+
 </body>
 </html>
