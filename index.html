@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Routing Kapal Final (Smooth + Anti Lag)</title>
+  <title>Routing Kapal Multi Pulau (Smooth Curve)</title>
   <meta charset="utf-8" />
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -49,7 +49,7 @@ var map = L.map('map').setView([-7,110],6);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 // ==========================
-// STATE
+// GLOBAL STATE
 // ==========================
 let islands = [];
 let mode = null;
@@ -58,12 +58,11 @@ let end = null;
 let startMarker, endMarker, routeLine;
 
 // ==========================
-// LOAD JSON
+// LOAD JSON (MULTI PULAU)
 // ==========================
 fetch('islands.json')
 .then(res => res.json())
 .then(data => {
-
   islands = data.islands;
 
   islands.forEach(island => {
@@ -73,7 +72,6 @@ fetch('islands.json')
       color:'red'
     }).addTo(map);
   });
-
 });
 
 // ==========================
@@ -101,7 +99,6 @@ map.on('click', function(e){
     if(endMarker) map.removeLayer(endMarker);
     endMarker = L.marker(p).addTo(map).bindPopup("End");
   }
-
 });
 
 // ==========================
@@ -125,32 +122,21 @@ function pointInPolygon(point, vs){
 }
 
 // ==========================
-// BLOCK CHECK (CEPAT)
+// CEK SEMUA PULAU
 // ==========================
 function isBlocked(point){
-
-  let buffer = 0.1;
-
   for(let island of islands){
-
     if(pointInPolygon(point, island.polygon)){
       return true;
     }
-
-    for(let p of island.polygon){
-      if(Math.hypot(point[0]-p[0], point[1]-p[1]) < buffer){
-        return true;
-      }
-    }
   }
-
   return false;
 }
 
 // ==========================
-// GRID OPTIMAL
+// GRID
 // ==========================
-let step = 0.1;
+let step = 0.2;
 
 function toKey(p){
   return p[0].toFixed(2)+","+p[1].toFixed(2);
@@ -168,12 +154,7 @@ function astar(start,end){
   g[toKey(start)] = 0;
   f[toKey(start)] = dist(start,end);
 
-  let maxIter = 5000;
-  let iter = 0;
-
-  while(open.length && iter < maxIter){
-
-    iter++;
+  while(open.length){
 
     open.sort((a,b)=>f[toKey(a)]-f[toKey(b)]);
     let cur = open.shift();
@@ -205,37 +186,20 @@ function astar(start,end){
 }
 
 // ==========================
-// 16 ARAH (HALUS + CEPAT)
+// HELPERS
 // ==========================
 function neighbors(p){
-  let result = [];
-  let directions = 16;
-
-  for(let i = 0; i < directions; i++){
-    let angle = (2 * Math.PI / directions) * i;
-
-    let dx = step * Math.cos(angle);
-    let dy = step * Math.sin(angle);
-
-    result.push([
-      p[0] + dx,
-      p[1] + dy
-    ]);
-  }
-
-  return result;
+  let d=[
+    [step,0],[-step,0],[0,step],[0,-step],
+    [step,step],[-step,-step],[step,-step],[-step,step]
+  ];
+  return d.map(v=>[p[0]+v[0],p[1]+v[1]]);
 }
 
-// ==========================
-// DISTANCE
-// ==========================
 function dist(a,b){
   return Math.hypot(a[0]-b[0], a[1]-b[1]);
 }
 
-// ==========================
-// RECONSTRUCT PATH
-// ==========================
 function reconstruct(cameFrom,cur){
   let path=[cur];
 
@@ -248,25 +212,23 @@ function reconstruct(cameFrom,cur){
 }
 
 // ==========================
-// SMOOTH RINGAN
+// SMOOTH PATH (CURVE)
 // ==========================
 function smoothPath(path){
+  if(path.length < 3) return path;
 
   let smooth = [];
 
-  for (let i = 0; i < path.length - 1; i++) {
+  for(let i=0; i<path.length-1; i++){
+    let p0 = path[i];
+    let p1 = path[i+1];
 
-    let a = path[i];
-    let b = path[i+1];
-
-    smooth.push(a);
-    smooth.push([
-      (a[0]+b[0])/2,
-      (a[1]+b[1])/2
-    ]);
+    for(let t=0; t<=1; t+=0.1){
+      let lat = p0[0] + (p1[0]-p0[0]) * t;
+      let lng = p0[1] + (p1[1]-p0[1]) * t;
+      smooth.push([lat,lng]);
+    }
   }
-
-  smooth.push(path[path.length-1]);
 
   return smooth;
 }
@@ -299,7 +261,8 @@ function runRoute(){
 
   routeLine = L.polyline(path,{
     color:'blue',
-    weight:4
+    weight:4,
+    smoothFactor: 1.5
   }).addTo(map);
 
   map.fitBounds(routeLine.getBounds());
