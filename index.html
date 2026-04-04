@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Routing Kapal (Versi Stabil & Luas)</title>
+  <title>Routing Kapal (Final Pro Version)</title>
   <meta charset="utf-8" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
@@ -38,10 +38,10 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-// --- KONFIGURASI ANTI-BUNTU ---
-const GRID_STEP = 0.025;      // Grid sedikit lebih longgar agar performa ringan
-const K_NEAREST = 20;         // Mencari lebih banyak tetangga agar koneksi kuat
-const SEARCH_RADIUS = 0.08;   // Radius koneksi diperlebar agar tidak mudah putus
+// --- KONFIGURASI POWERFUL ---
+const GRID_STEP = 0.02;      // Lebih rapat untuk akurasi selat
+const K_NEAREST = 25;         // Lebih banyak koneksi per node
+const SEARCH_RADIUS = 0.06;   // Jangkauan antar node grid
 
 var map = L.map('map').setView([-8.4, 115.1], 9);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
@@ -60,14 +60,13 @@ fetch('islands.json')
       L.polygon(isl.polygon, {color: 'red', weight: 1, fillOpacity: 0.1, interactive: false}).addTo(map);
     });
     
-    updateStatus("Membuat Jalur Laut...");
+    updateStatus("Membangun Jalur Laut...");
     await sleep(50);
     generateNodes();
     await connectGraphAsync();
     updateStatus("Sistem Siap ✅", "#27ae60");
   });
 
-// --- 2. GEOMETRY ENGINE ---
 function pointInPolygon(p, vs) {
   let x = p[0], y = p[1], inside = false;
   for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
@@ -86,7 +85,7 @@ function isBlocked(p) {
 
 function canSee(a, b) {
   let d = dist(a, b);
-  let steps = Math.max(5, Math.ceil(d / 0.015)); 
+  let steps = Math.max(6, Math.ceil(d / 0.01)); 
   for (let i = 1; i < steps; i++) {
     let t = i / steps;
     let p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
@@ -97,11 +96,9 @@ function canSee(a, b) {
 
 function dist(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
 
-// --- 3. GRAPH ENGINE ---
 function generateNodes() {
-  // Area diperluas agar mencakup seluruh Jawa Timur ke Bali
-  for (let lat = -9.5; lat < -7.5; lat += GRID_STEP) {
-    for (let lng = 113.5; lng < 116.5; lng += GRID_STEP) {
+  for (let lat = -9.2; lat < -7.6; lat += GRID_STEP) {
+    for (let lng = 113.8; lng < 116.2; lng += GRID_STEP) {
       let p = [lat, lng];
       if (!isBlocked(p)) nodes.push({ id: nodes.length, coord: p });
     }
@@ -112,12 +109,9 @@ async function connectGraphAsync() {
   for (let i = 0; i < nodes.length; i++) {
     let a = nodes[i];
     edges[a.id] = [];
-    
-    let candidates = nodes.filter(b => {
-      if (a.id === b.id) return false;
-      return Math.abs(a.coord[0] - b.coord[0]) < SEARCH_RADIUS && 
-             Math.abs(a.coord[1] - b.coord[1]) < SEARCH_RADIUS;
-    });
+    let candidates = nodes.filter(b => a.id !== b.id && 
+        Math.abs(a.coord[0] - b.coord[0]) < SEARCH_RADIUS && 
+        Math.abs(a.coord[1] - b.coord[1]) < SEARCH_RADIUS);
 
     candidates.map(b => ({ id: b.id, d: dist(a.coord, b.coord) }))
       .sort((x, y) => x.d - y.d)
@@ -126,8 +120,8 @@ async function connectGraphAsync() {
         if (canSee(a.coord, nodes[n.id].coord)) edges[a.id].push(n.id);
       });
 
-    if (i % 300 === 0) {
-      updateStatus(`Menghubungkan: ${Math.round((i/nodes.length)*100)}%`);
+    if (i % 400 === 0) {
+      updateStatus(`Koneksi: ${Math.round((i/nodes.length)*100)}%`);
       await sleep(1);
     }
   }
@@ -135,52 +129,54 @@ async function connectGraphAsync() {
 
 // --- 4. NAVIGATION ---
 function runRoute() {
-  if (!start || !end) { alert("Tentukan lokasi awal dan tujuan!"); return; }
-  updateStatus("Mencari Jalan...");
+  if (!start || !end) { alert("Pilih Start dan End!"); return; }
+  updateStatus("Menghitung...");
 
-  let sId = nodes.length, eId = nodes.length + 1;
-  let tempEdges = JSON.parse(JSON.stringify(edges)); 
+  const sId = "START_NODE", eId = "END_NODE";
   
-  // Hubungkan Start & End ke Grid dengan radius SANGAT besar agar tidak buntu
-  [ {id: sId, coord: start}, {id: eId, coord: end} ].forEach(tmp => {
-    tempEdges[tmp.id] = [];
-    nodes.filter(n => dist(tmp.coord, n.coord) < 0.5) // Radius 0.5 derajat (~50km)
-         .sort((a,b) => dist(tmp.coord, a.coord) - dist(tmp.coord, b.coord))
-         .slice(0, 30) // Ambil 30 titik grid terdekat
+  // Buat koneksi sementara hanya untuk Start & End
+  edges[sId] = [];
+  edges[eId] = [];
+
+  const connectPoint = (id, coord) => {
+    nodes.filter(n => dist(coord, n.coord) < 0.4) // Radius pencarian grid luas
+         .map(n => ({ id: n.id, d: dist(coord, n.coord) }))
+         .sort((a,b) => a.d - b.d)
+         .slice(0, 40) // Coba hubungkan ke 40 grid terdekat
          .forEach(n => {
-           if (canSee(tmp.coord, n.coord)) {
-             tempEdges[tmp.id].push(n.id);
-             if (!tempEdges[n.id]) tempEdges[n.id] = [];
-             tempEdges[n.id].push(tmp.id);
+           if (canSee(coord, nodes[n.id].coord)) {
+             edges[id].push(n.id);
+             edges[n.id].push(id); // Timbal balik
            }
          });
-  });
+  };
 
-  let path = astar(sId, eId, tempEdges);
+  connectPoint(sId, start);
+  connectPoint(eId, end);
+
+  let path = astar(sId, eId);
+  
+  // Bersihkan koneksi sementara agar tidak mengganggu rute berikutnya
+  edges[sId].forEach(nId => { edges[nId] = edges[nId].filter(id => id !== sId); });
+  edges[eId].forEach(nId => { edges[nId] = edges[nId].filter(id => id !== eId); });
+  delete edges[sId];
+  delete edges[eId];
+
   if (path.length > 0) {
     if (routeLine) map.removeLayer(routeLine);
-    let coords = path.map(id => {
-      if (id === sId) return start;
-      if (id === eId) return end;
-      return nodes[id].coord;
-    });
+    let coords = path.map(id => (id === sId) ? start : (id === eId ? end : nodes[id].coord));
     routeLine = L.polyline(coords, {color: '#007bff', weight: 6}).addTo(map);
     map.fitBounds(routeLine.getBounds());
     updateStatus("Rute Berhasil! ✅");
   } else {
-    updateStatus("Gagal (Buntu) ❌", "#c0392b");
-    alert("Lokasi ini terisolasi. Coba klik sedikit menjauh dari dermaga/garis pantai.");
+    updateStatus("Gagal (Terisolasi) ❌", "red");
+    alert("Titik terlalu dekat daratan atau grid terputus. Coba klik lebih ke tengah laut.");
   }
 }
 
-function astar(s, e, graph) {
-  let open = [s], cameFrom = {}, gScore = {[s]: 0}, fScore = {[s]: dist(getCoord(s), getCoord(e))};
-
-  function getCoord(id) {
-    if (id === s) return start;
-    if (id === e) return end;
-    return nodes[id].coord;
-  }
+function astar(s, e) {
+  let getC = (id) => (id === "START_NODE") ? start : (id === "END_NODE" ? end : nodes[id].coord);
+  let open = [s], cameFrom = {}, gScore = {[s]: 0}, fScore = {[s]: dist(getC(s), getC(e))};
 
   while (open.length > 0) {
     let curr = open.reduce((a, b) => fScore[a] < fScore[b] ? a : b);
@@ -190,12 +186,12 @@ function astar(s, e, graph) {
       return res.reverse();
     }
     open = open.filter(i => i !== curr);
-    (graph[curr] || []).forEach(next => {
-      let g = gScore[curr] + dist(getCoord(curr), getCoord(next));
+    (edges[curr] || []).forEach(next => {
+      let g = gScore[curr] + dist(getC(curr), getC(next));
       if (gScore[next] === undefined || g < gScore[next]) {
         cameFrom[next] = curr;
         gScore[next] = g;
-        fScore[next] = g + dist(getCoord(next), getCoord(e));
+        fScore[next] = g + dist(getC(next), getC(e));
         if (!open.includes(next)) open.push(next);
       }
     });
@@ -203,7 +199,7 @@ function astar(s, e, graph) {
   return [];
 }
 
-function setMode(m) { mode = m; updateStatus("Klik di peta..."); }
+function setMode(m) { mode = m; updateStatus("Pilih titik di laut..."); }
 function updateStatus(txt, col) { const s = document.getElementById('status'); s.innerText = txt; if(col) s.style.color = col; }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
