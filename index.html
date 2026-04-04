@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Routing Kapal (Google Maps Style)</title>
+  <title>Routing Kapal (Google Maps Style - FIX KNN)</title>
   <meta charset="utf-8" />
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -33,8 +33,6 @@
 
 <script>
 // ==========================
-// MAP
-// ==========================
 var map = L.map('map').setView([-7,110],6);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
@@ -48,8 +46,6 @@ let startMarker,endMarker,routeLine;
 let mode=null;
 
 // ==========================
-// LOAD ISLAND
-// ==========================
 fetch('islands.json')
 .then(res=>res.json())
 .then(data=>{
@@ -61,7 +57,7 @@ fetch('islands.json')
   });
 
   generateNodes();
-  connectGraph();
+  connectGraph(); // 🔥 sudah pakai KNN
 });
 
 // ==========================
@@ -106,7 +102,7 @@ function canSee(a,b){
 }
 
 // ==========================
-// AUTO GENERATE NODE 🔥
+// AUTO NODE
 // ==========================
 function generateNodes(){
 
@@ -130,25 +126,44 @@ function generateNodes(){
 }
 
 // ==========================
-// CONNECT GRAPH 🔥
+// 🔥 CONNECT GRAPH (KNN FIX)
 // ==========================
 function connectGraph(){
 
+  let K = 5; // jumlah tetangga terdekat
+
   nodes.forEach(a=>{
-    edges[a.id]=[];
+    edges[a.id] = [];
 
-    nodes.forEach(b=>{
-      if(a.id===b.id) return;
+    // urutkan berdasarkan jarak
+    let sorted = nodes
+      .filter(b => b.id !== a.id)
+      .map(b => ({
+        id: b.id,
+        d: dist(a.coord, b.coord)
+      }))
+      .sort((x,y)=>x.d - y.d);
 
-      if(dist(a.coord,b.coord) < 1){ // radius koneksi
-        if(canSee(a.coord,b.coord)){
-          edges[a.id].push(b.id);
+    let nearest = sorted.slice(0, K);
+
+    nearest.forEach(n=>{
+      let b = nodes[n.id];
+
+      if(canSee(a.coord, b.coord)){
+
+        // forward
+        edges[a.id].push(b.id);
+
+        // 🔥 backward (bi-directional)
+        if(!edges[b.id]) edges[b.id] = [];
+        if(!edges[b.id].includes(a.id)){
+          edges[b.id].push(a.id);
         }
       }
     });
   });
 
-  console.log("Graph ready");
+  console.log("Graph KNN siap:", edges);
 }
 
 // ==========================
@@ -194,7 +209,9 @@ function astar(startNode,endNode){
       if(g[nb]===undefined || temp<g[nb]){
         came[nb]=current;
         g[nb]=temp;
-        f[nb]=temp+dist(nodes[nb].coord,endNode.coord);
+
+        // 🔥 bikin jalur lebih lurus
+        f[nb]=temp + dist(nodes[nb].coord,endNode.coord)*1.1;
 
         if(!open.includes(nb)) open.push(nb);
       }
