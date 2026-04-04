@@ -38,9 +38,14 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-const GRID_STEP = 0.015;     // ✅ Lebih rapat agar selat sempit terbaca
+const GRID_STEP = 0.015;
 const K_NEAREST = 30;
 const SEARCH_RADIUS = 0.07;
+
+// ✅ Batas grid — sesuaikan dengan cakupan islands.json kamu
+// Ini bisa kamu perlebar jika rute mencakup area lebih jauh
+const GRID_LAT_MIN = -10.0, GRID_LAT_MAX = -6.5;
+const GRID_LNG_MIN = 112.0, GRID_LNG_MAX = 117.5;
 
 var map = L.map('map').setView([-8.4, 115.1], 9);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
@@ -77,8 +82,6 @@ function pointInPolygon(p, vs) {
   return inside;
 }
 
-// ✅ Hanya blokir jika BENAR-BENAR di dalam polygon (tidak ada buffer)
-// Selat sempit tetap bisa dilalui
 function isBlocked(p) {
   for (let i = 0; i < islands.length; i++) {
     if (pointInPolygon(p, islands[i].polygon)) return true;
@@ -86,7 +89,6 @@ function isBlocked(p) {
   return false;
 }
 
-// ✅ canSee() lebih ketat: step lebih kecil (0.005°) agar selat sempit terdeteksi
 function canSee(a, b) {
   let d = dist(a, b);
   let steps = Math.max(10, Math.ceil(d / 0.005));
@@ -100,10 +102,9 @@ function canSee(a, b) {
 
 function dist(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
 
-// ✅ Generate node TANPA buffer — selat sempit tetap dapat node
 function generateNodes() {
-  for (let lat = -9.2; lat < -7.6; lat += GRID_STEP) {
-    for (let lng = 113.8; lng < 116.2; lng += GRID_STEP) {
+  for (let lat = GRID_LAT_MIN; lat < GRID_LAT_MAX; lat += GRID_STEP) {
+    for (let lng = GRID_LNG_MIN; lng < GRID_LNG_MAX; lng += GRID_STEP) {
       let p = [lat, lng];
       if (!isBlocked(p)) nodes.push({ id: nodes.length, coord: p });
     }
@@ -148,48 +149,58 @@ function runRoute() {
   edges[eId] = [];
 
   const connectPoint = (id, coord) => {
+    // ✅ Cek apakah titik berada dalam batas grid
+    const inGrid = coord[0] >= GRID_LAT_MIN && coord[0] <= GRID_LAT_MAX &&
+                   coord[1] >= GRID_LNG_MIN && coord[1] <= GRID_LNG_MAX;
+
+    if (!inGrid) {
+      // ✅ Titik di luar grid: langsung gunakan node terdekat tanpa canSee
+      console.warn(`[${id}] Di luar batas grid, paksa konek ke node terdekat`);
+      nodes
+        .map(n => ({ id: n.id, d: dist(coord, n.coord) }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, 5)
+        .forEach(n => {
+          edges[id].push(n.id);
+          edges[n.id].push(id);
+        });
+      return;
+    }
+
     let sorted = nodes
       .map(n => ({ id: n.id, d: dist(coord, n.coord) }))
       .sort((a, b) => a.d - b.d);
 
     let connected = 0;
 
-    // Tahap 1: canSee() normal, radius 0.5°, 50 kandidat
-    sorted
-      .filter(n => n.d < 0.5)
-      .slice(0, 50)
-      .forEach(n => {
+    // Tahap 1: radius 0.5°
+    sorted.filter(n => n.d < 0.5).slice(0, 50).forEach(n => {
+      if (canSee(coord, nodes[n.id].coord)) {
+        edges[id].push(n.id);
+        edges[n.id].push(id);
+        connected++;
+      }
+    });
+
+    // Tahap 2: radius 1.5° jika masih gagal
+    if (connected === 0) {
+      sorted.filter(n => n.d < 1.5).slice(0, 100).forEach(n => {
         if (canSee(coord, nodes[n.id].coord)) {
           edges[id].push(n.id);
           edges[n.id].push(id);
           connected++;
         }
       });
-
-    // Tahap 2: Perlebar ke 1.0° jika belum konek
-    if (connected === 0) {
-      sorted
-        .filter(n => n.d < 1.0)
-        .slice(0, 80)
-        .forEach(n => {
-          if (canSee(coord, nodes[n.id].coord)) {
-            edges[id].push(n.id);
-            edges[n.id].push(id);
-            connected++;
-          }
-        });
     }
 
-    // Tahap 3: Fallback paksa ke 5 node terdekat (hanya jika benar-benar gagal)
+    // Tahap 3: fallback paksa tanpa canSee
     if (connected === 0) {
-      console.warn(`[${id}] Fallback paksa ke 5 node terdekat`);
+      console.warn(`[${id}] Fallback paksa`);
       sorted.slice(0, 5).forEach(n => {
         edges[id].push(n.id);
         edges[n.id].push(id);
       });
     }
-
-    console.log(`[${id}] terhubung ke ${connected} node`);
   };
 
   connectPoint(sId, start);
@@ -197,7 +208,6 @@ function runRoute() {
 
   let path = astar(sId, eId);
 
-  // Bersihkan koneksi sementara
   (edges[sId] || []).forEach(nId => {
     if (edges[nId]) edges[nId] = edges[nId].filter(id => id !== sId);
   });
@@ -216,8 +226,8 @@ function runRoute() {
     map.fitBounds(routeLine.getBounds());
     updateStatus("Rute Berhasil! ✅", "#27ae60");
   } else {
-    updateStatus("Gagal: area terisolasi ❌", "red");
-    alert("Rute tidak ditemukan.\n• Coba titik lebih ke tengah laut\n• Pastikan islands.json tidak memblokir selat");
+    updateStatus("Gagal: tidak ada jalur laut ❌", "red");
+    alert("Rute tidak ditemukan.\nKemungkinan kedua titik berada di laut yang terpisah oleh daratan besar tanpa jalur laut dalam islands.json.");
   }
 }
 
@@ -260,18 +270,8 @@ map.on('click', e => {
   if (!mode) return;
   let p = [e.latlng.lat, e.latlng.lng];
 
+  // ✅ Hanya blokir jika klik di daratan — tidak ada validasi jarak grid
   if (isBlocked(p)) { alert("Itu daratan!"); return; }
-
-  // Validasi: cek node terdekat
-  let nearest = nodes.reduce((best, n) => {
-    let d = dist(p, n.coord);
-    return d < best.d ? {d, n} : best;
-  }, {d: Infinity, n: null});
-
-  if (nearest.d > 1.0) {
-    alert(`Area ini terlalu terpencil dari grid laut.\nCoba klik di area laut yang lebih terbuka.`);
-    return;
-  }
 
   if (mode === 'start') {
     start = p;
