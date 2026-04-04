@@ -38,11 +38,9 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-const GRID_STEP = 0.02;
-const K_NEAREST = 25;
-const SEARCH_RADIUS = 0.06;
-// ✅ PERBAIKAN 1: Buffer margin dari daratan
-const LAND_BUFFER = 0.012;
+const GRID_STEP = 0.015;     // ✅ Lebih rapat agar selat sempit terbaca
+const K_NEAREST = 30;
+const SEARCH_RADIUS = 0.07;
 
 var map = L.map('map').setView([-8.4, 115.1], 9);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
@@ -56,7 +54,8 @@ fetch('islands.json')
   .then(async data => {
     islands = data.islands;
     islands.forEach(isl => {
-      if (isl.polygon[0] !== isl.polygon[isl.polygon.length - 1]) isl.polygon.push(isl.polygon[0]);
+      if (isl.polygon[0] !== isl.polygon[isl.polygon.length - 1])
+        isl.polygon.push(isl.polygon[0]);
       L.polygon(isl.polygon, {color: 'red', weight: 1, fillOpacity: 0.1, interactive: false}).addTo(map);
     });
     updateStatus("Membangun Jalur Laut...");
@@ -66,33 +65,31 @@ fetch('islands.json')
     updateStatus("Sistem Siap ✅", "#27ae60");
   });
 
+// --- Geometry ---
+
 function pointInPolygon(p, vs) {
   let x = p[0], y = p[1], inside = false;
   for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
     let xi = vs[i][0], yi = vs[i][1], xj = vs[j][0], yj = vs[j][1];
-    if (((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+    if (((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi))
+      inside = !inside;
   }
   return inside;
 }
 
-// ✅ PERBAIKAN 1: isBlocked dengan buffer margin dari tepi daratan
-function isBlocked(p, buffer = 0) {
+// ✅ Hanya blokir jika BENAR-BENAR di dalam polygon (tidak ada buffer)
+// Selat sempit tetap bisa dilalui
+function isBlocked(p) {
   for (let i = 0; i < islands.length; i++) {
     if (pointInPolygon(p, islands[i].polygon)) return true;
-    if (buffer > 0) {
-      // Cek titik-titik di sekitar dengan buffer
-      const offsets = [[buffer,0],[-buffer,0],[0,buffer],[0,-buffer]];
-      for (let [dlat, dlng] of offsets) {
-        if (pointInPolygon([p[0]+dlat, p[1]+dlng], islands[i].polygon)) return true;
-      }
-    }
   }
   return false;
 }
 
+// ✅ canSee() lebih ketat: step lebih kecil (0.005°) agar selat sempit terdeteksi
 function canSee(a, b) {
   let d = dist(a, b);
-  let steps = Math.max(8, Math.ceil(d / 0.008));
+  let steps = Math.max(10, Math.ceil(d / 0.005));
   for (let i = 1; i < steps; i++) {
     let t = i / steps;
     let p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
@@ -103,25 +100,30 @@ function canSee(a, b) {
 
 function dist(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
 
+// ✅ Generate node TANPA buffer — selat sempit tetap dapat node
 function generateNodes() {
   for (let lat = -9.2; lat < -7.6; lat += GRID_STEP) {
     for (let lng = 113.8; lng < 116.2; lng += GRID_STEP) {
       let p = [lat, lng];
-      // ✅ PERBAIKAN 1: Buang node yang terlalu dekat daratan
-      if (!isBlocked(p, LAND_BUFFER)) nodes.push({ id: nodes.length, coord: p });
+      if (!isBlocked(p)) nodes.push({ id: nodes.length, coord: p });
     }
   }
+  console.log(`Total nodes: ${nodes.length}`);
 }
 
 async function connectGraphAsync() {
   for (let i = 0; i < nodes.length; i++) {
     let a = nodes[i];
     edges[a.id] = [];
-    let candidates = nodes.filter(b => a.id !== b.id && 
-        Math.abs(a.coord[0] - b.coord[0]) < SEARCH_RADIUS && 
-        Math.abs(a.coord[1] - b.coord[1]) < SEARCH_RADIUS);
 
-    candidates.map(b => ({ id: b.id, d: dist(a.coord, b.coord) }))
+    let candidates = nodes.filter(b =>
+      a.id !== b.id &&
+      Math.abs(a.coord[0] - b.coord[0]) < SEARCH_RADIUS &&
+      Math.abs(a.coord[1] - b.coord[1]) < SEARCH_RADIUS
+    );
+
+    candidates
+      .map(b => ({ id: b.id, d: dist(a.coord, b.coord) }))
       .sort((x, y) => x.d - y.d)
       .slice(0, K_NEAREST)
       .forEach(n => {
@@ -129,11 +131,13 @@ async function connectGraphAsync() {
       });
 
     if (i % 400 === 0) {
-      updateStatus(`Koneksi: ${Math.round((i/nodes.length)*100)}%`);
+      updateStatus(`Koneksi: ${Math.round((i / nodes.length) * 100)}%`);
       await sleep(1);
     }
   }
 }
+
+// --- Routing ---
 
 function runRoute() {
   if (!start || !end) { alert("Pilih Start dan End!"); return; }
@@ -143,17 +147,17 @@ function runRoute() {
   edges[sId] = [];
   edges[eId] = [];
 
-  // ✅ PERBAIKAN 2 & 3: Radius lebih besar + fallback paksa
   const connectPoint = (id, coord) => {
     let sorted = nodes
       .map(n => ({ id: n.id, d: dist(coord, n.coord) }))
       .sort((a, b) => a.d - b.d);
 
-    // Coba normal dulu: radius 0.6, 60 kandidat
     let connected = 0;
+
+    // Tahap 1: canSee() normal, radius 0.5°, 50 kandidat
     sorted
-      .filter(n => n.d < 0.6)
-      .slice(0, 60)
+      .filter(n => n.d < 0.5)
+      .slice(0, 50)
       .forEach(n => {
         if (canSee(coord, nodes[n.id].coord)) {
           edges[id].push(n.id);
@@ -162,14 +166,30 @@ function runRoute() {
         }
       });
 
-    // ✅ PERBAIKAN 2: Fallback — paksa sambung 3 node terdekat walau mungkin terhalang
+    // Tahap 2: Perlebar ke 1.0° jika belum konek
     if (connected === 0) {
-      console.warn(`[${id}] canSee() gagal total, fallback paksa ke 3 node terdekat`);
-      sorted.slice(0, 3).forEach(n => {
+      sorted
+        .filter(n => n.d < 1.0)
+        .slice(0, 80)
+        .forEach(n => {
+          if (canSee(coord, nodes[n.id].coord)) {
+            edges[id].push(n.id);
+            edges[n.id].push(id);
+            connected++;
+          }
+        });
+    }
+
+    // Tahap 3: Fallback paksa ke 5 node terdekat (hanya jika benar-benar gagal)
+    if (connected === 0) {
+      console.warn(`[${id}] Fallback paksa ke 5 node terdekat`);
+      sorted.slice(0, 5).forEach(n => {
         edges[id].push(n.id);
         edges[n.id].push(id);
       });
     }
+
+    console.log(`[${id}] terhubung ke ${connected} node`);
   };
 
   connectPoint(sId, start);
@@ -178,25 +198,31 @@ function runRoute() {
   let path = astar(sId, eId);
 
   // Bersihkan koneksi sementara
-  edges[sId] && edges[sId].forEach(nId => { if(edges[nId]) edges[nId] = edges[nId].filter(id => id !== sId); });
-  edges[eId] && edges[eId].forEach(nId => { if(edges[nId]) edges[nId] = edges[nId].filter(id => id !== eId); });
+  (edges[sId] || []).forEach(nId => {
+    if (edges[nId]) edges[nId] = edges[nId].filter(id => id !== sId);
+  });
+  (edges[eId] || []).forEach(nId => {
+    if (edges[nId]) edges[nId] = edges[nId].filter(id => id !== eId);
+  });
   delete edges[sId];
   delete edges[eId];
 
   if (path.length > 0) {
     if (routeLine) map.removeLayer(routeLine);
-    let coords = path.map(id => (id === sId) ? start : (id === eId ? end : nodes[id].coord));
+    let coords = path.map(id =>
+      id === sId ? start : id === eId ? end : nodes[id].coord
+    );
     routeLine = L.polyline(coords, {color: '#007bff', weight: 6}).addTo(map);
     map.fitBounds(routeLine.getBounds());
     updateStatus("Rute Berhasil! ✅", "#27ae60");
   } else {
     updateStatus("Gagal: area terisolasi ❌", "red");
-    alert("Rute tidak ditemukan. Kemungkinan:\n• Area benar-benar terkepung daratan\n• Coba titik lebih ke tengah laut\n• Periksa islands.json apakah poligon menutup area laut");
+    alert("Rute tidak ditemukan.\n• Coba titik lebih ke tengah laut\n• Pastikan islands.json tidak memblokir selat");
   }
 }
 
 function astar(s, e) {
-  let getC = (id) => (id === "START_NODE") ? start : (id === "END_NODE" ? end : nodes[id].coord);
+  let getC = (id) => id === "START_NODE" ? start : id === "END_NODE" ? end : nodes[id].coord;
   let open = [s], cameFrom = {}, gScore = {[s]: 0}, fScore = {[s]: dist(getC(s), getC(e))};
 
   while (open.length > 0) {
@@ -220,39 +246,45 @@ function astar(s, e) {
   return [];
 }
 
-// ✅ PERBAIKAN 4: Validasi titik saat klik — peringatan jika terlalu jauh dari grid
+// --- UI ---
+
 function setMode(m) { mode = m; updateStatus("Pilih titik di laut..."); }
-function updateStatus(txt, col) { const s = document.getElementById('status'); s.innerText = txt; s.style.color = col || '#e67e22'; }
+function updateStatus(txt, col) {
+  const s = document.getElementById('status');
+  s.innerText = txt;
+  s.style.color = col || '#e67e22';
+}
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 map.on('click', e => {
+  if (!mode) return;
   let p = [e.latlng.lat, e.latlng.lng];
+
   if (isBlocked(p)) { alert("Itu daratan!"); return; }
 
-  // ✅ PERBAIKAN 4: Cek apakah ada node grid cukup dekat
-  if (mode === 'start' || mode === 'end') {
-    let nearest = nodes.reduce((best, n) => {
-      let d = dist(p, n.coord);
-      return d < best.d ? {d, n} : best;
-    }, {d: Infinity, n: null});
+  // Validasi: cek node terdekat
+  let nearest = nodes.reduce((best, n) => {
+    let d = dist(p, n.coord);
+    return d < best.d ? {d, n} : best;
+  }, {d: Infinity, n: null});
 
-    if (nearest.d > 0.6) {
-      alert(`Titik ini terlalu terpencil (jarak ke grid: ${nearest.d.toFixed(3)}°).\nCoba klik di area laut yang lebih terbuka.`);
-      return;
-    }
-
-    if (mode === 'start') {
-      start = p;
-      if (startMarker) map.removeLayer(startMarker);
-      startMarker = L.marker(p).addTo(map);
-    } else {
-      end = p;
-      if (endMarker) map.removeLayer(endMarker);
-      endMarker = L.marker(p).addTo(map);
-    }
-    mode = null;
-    updateStatus("Siap");
+  if (nearest.d > 1.0) {
+    alert(`Area ini terlalu terpencil dari grid laut.\nCoba klik di area laut yang lebih terbuka.`);
+    return;
   }
+
+  if (mode === 'start') {
+    start = p;
+    if (startMarker) map.removeLayer(startMarker);
+    startMarker = L.marker(p).addTo(map);
+  } else if (mode === 'end') {
+    end = p;
+    if (endMarker) map.removeLayer(endMarker);
+    endMarker = L.marker(p).addTo(map);
+  }
+
+  mode = null;
+  updateStatus("Siap");
 });
 </script>
 </body>
