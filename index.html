@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Routing Kapal SUPER FAST (Hybrid AI)</title>
+  <title>Routing Kapal Graph (Like Google Maps)</title>
   <meta charset="utf-8" />
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -17,6 +17,11 @@
       padding: 10px;
       border-radius: 10px;
       z-index: 1000;
+    }
+
+    button {
+      margin: 5px;
+      padding: 8px;
     }
   </style>
 </head>
@@ -35,140 +40,138 @@
 
 <script>
 // ==========================
+// MAP
+// ==========================
 var map = L.map('map').setView([-7,110],6);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 // ==========================
-let islands = [];
+// GLOBAL
+// ==========================
 let mode = null;
 let start = null;
 let end = null;
 let startMarker, endMarker, routeLine;
 
 // ==========================
-fetch('islands.json')
-.then(res => res.json())
-.then(data => {
-  islands = data.islands;
+// NODE GRAPH (JALUR LAUT)
+// 👉 TAMBAH SENDIRI SESUAI DATA PULAU
+// ==========================
+let nodes = [
+  {id:0, coord:[-7.5,110]},
+  {id:1, coord:[-7.2,111]},
+  {id:2, coord:[-6.8,112]},
+  {id:3, coord:[-6.5,113]},
+  {id:4, coord:[-7.0,114]},
+  {id:5, coord:[-7.8,112]},
+];
 
-  islands.forEach(i=>{
-    i.polygon.push(i.polygon[0]);
-    L.polygon(i.polygon,{color:'red'}).addTo(map);
-  });
-});
+// koneksi antar node
+let edges = {
+  0:[1],
+  1:[0,2,5],
+  2:[1,3],
+  3:[2,4],
+  4:[3],
+  5:[1]
+};
 
 // ==========================
 function setMode(m){ mode = m; }
 
-map.on('click', e=>{
-  let p=[e.latlng.lat,e.latlng.lng];
+map.on('click', function(e){
+  let p = [e.latlng.lat, e.latlng.lng];
 
-  if(mode==='start'){
-    start=p;
+  if(mode === 'start'){
+    start = p;
     if(startMarker) map.removeLayer(startMarker);
-    startMarker=L.marker(p).addTo(map);
+    startMarker = L.marker(p).addTo(map);
   }
 
-  if(mode==='end'){
-    end=p;
+  if(mode === 'end'){
+    end = p;
     if(endMarker) map.removeLayer(endMarker);
-    endMarker=L.marker(p).addTo(map);
+    endMarker = L.marker(p).addTo(map);
   }
 });
 
 // ==========================
-// GEOMETRY
+// UTIL
 // ==========================
-function pointInPolygon(p, vs){
-  let x=p[0], y=p[1], inside=false;
-  for(let i=0,j=vs.length-1;i<vs.length;j=i++){
-    let xi=vs[i][0], yi=vs[i][1];
-    let xj=vs[j][0], yj=vs[j][1];
-
-    let intersect=((yi>y)!=(yj>y)) &&
-      (x<(xj-xi)*(y-yi)/(yj-yi)+xi);
-
-    if(intersect) inside=!inside;
-  }
-  return inside;
-}
-
-function isBlocked(p){
-  for(let isl of islands){
-    if(pointInPolygon(p, isl.polygon)) return true;
-  }
-  return false;
-}
-
-// ==========================
-// DIRECT PATH CHECK 🔥
-// ==========================
-function directPath(a,b){
-  let steps=30;
-
-  for(let i=0;i<=steps;i++){
-    let t=i/steps;
-    let p=[
-      a[0]+(b[0]-a[0])*t,
-      a[1]+(b[1]-a[1])*t
-    ];
-    if(isBlocked(p)) return false;
-  }
-  return true;
-}
-
-// ==========================
-// SIMPLE A* (LIMITED)
-// ==========================
-let step=0.12;
-
-function neighbors(p){
-  return [
-    [p[0]+step,p[1]],
-    [p[0]-step,p[1]],
-    [p[0],p[1]+step],
-    [p[0],p[1]-step],
-    [p[0]+step,p[1]+step],
-    [p[0]-step,p[1]-step],
-    [p[0]+step,p[1]-step],
-    [p[0]-step,p[1]+step]
-  ];
-}
-
 function dist(a,b){
-  return Math.hypot(a[0]-b[0],a[1]-b[1]);
+  return Math.hypot(a[0]-b[0], a[1]-b[1]);
 }
 
-function astar(start,end){
+// cari node terdekat
+function nearestNode(point){
+  let best = nodes[0];
+  let min = dist(point, best.coord);
 
-  let open=[start];
-  let came={};
-  let g={};
+  for(let n of nodes){
+    let d = dist(point, n.coord);
+    if(d < min){
+      min = d;
+      best = n;
+    }
+  }
 
-  g[start]=0;
+  return best;
+}
 
-  let loop=0;
+// ==========================
+// A* GRAPH (RINGAN BANGET)
+// ==========================
+function astar(startNode, endNode){
 
-  while(open.length && loop<3000){ // LIMIT 🔥
-    loop++;
+  let open = [startNode.id];
+  let came = {};
+  let g = {}, f = {};
 
-    let cur=open.shift();
+  g[startNode.id] = 0;
+  f[startNode.id] = dist(startNode.coord, endNode.coord);
 
-    if(dist(cur,end)<step){
-      return [start,end];
+  while(open.length){
+
+    let current = open.reduce((a,b)=>f[a]<f[b]?a:b);
+
+    if(current === endNode.id){
+      return reconstruct(came, current);
     }
 
-    for(let n of neighbors(cur)){
-      if(isBlocked(n)) continue;
+    open = open.filter(n=>n!==current);
 
-      if(!g[n]){
-        g[n]=1;
-        open.push(n);
+    for(let nb of edges[current]){
+
+      let temp = g[current] + dist(
+        nodes[current].coord,
+        nodes[nb].coord
+      );
+
+      if(g[nb] === undefined || temp < g[nb]){
+        came[nb] = current;
+        g[nb] = temp;
+        f[nb] = temp + dist(nodes[nb].coord, endNode.coord);
+
+        if(!open.includes(nb)){
+          open.push(nb);
+        }
       }
     }
   }
 
-  return [start,end];
+  return [];
+}
+
+// ==========================
+function reconstruct(came, cur){
+  let path = [cur];
+
+  while(came[cur] !== undefined){
+    cur = came[cur];
+    path.push(cur);
+  }
+
+  return path.reverse().map(i=>nodes[i].coord);
 }
 
 // ==========================
@@ -194,25 +197,25 @@ function smooth(path){
 // ==========================
 function runRoute(){
 
-  if(!start||!end){
-    alert("Pilih titik!");
+  if(!start || !end){
+    alert("Pilih start & end!");
     return;
   }
 
-  let path;
+  let sNode = nearestNode(start);
+  let eNode = nearestNode(end);
 
-  // 🔥 PRIORITAS: langsung tembus
-  if(directPath(start,end)){
-    path=[start,end];
-  } else {
-    path=astar(start,end);
-  }
+  let path = astar(sNode, eNode);
 
-  path=smooth(path);
+  // gabungkan dengan titik asli
+  path.unshift(start);
+  path.push(end);
+
+  path = smooth(path);
 
   if(routeLine) map.removeLayer(routeLine);
 
-  routeLine=L.polyline(path,{
+  routeLine = L.polyline(path,{
     color:'blue',
     weight:4
   }).addTo(map);
@@ -226,8 +229,8 @@ function resetAll(){
   if(endMarker) map.removeLayer(endMarker);
   if(routeLine) map.removeLayer(routeLine);
 
-  start=null;
-  end=null;
+  start = null;
+  end = null;
 }
 </script>
 
