@@ -1,30 +1,18 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Routing Kapal (Optimized - Selat Bali Fix)</title>
+  <title>Routing Kapal (Fixed Connectivity)</title>
   <meta charset="utf-8" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
     body { margin: 0; padding: 0; font-family: sans-serif; }
     #map { height: 100vh; width: 100vw; }
     .panel {
-      position: absolute;
-      top: 15px;
-      left: 50px;
-      background: rgba(255, 255, 255, 0.9);
-      padding: 15px;
-      border-radius: 8px;
-      z-index: 1000;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      position: absolute; top: 15px; left: 50px;
+      background: rgba(255, 255, 255, 0.9); padding: 15px;
+      border-radius: 8px; z-index: 1000; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
-    button {
-      padding: 8px 12px;
-      cursor: pointer;
-      border: 1px solid #ccc;
-      background: white;
-      border-radius: 4px;
-      font-weight: bold;
-    }
+    button { padding: 8px 12px; cursor: pointer; border: 1px solid #ccc; background: white; border-radius: 4px; font-weight: bold; }
     button:hover { background: #f0f0f0; }
     .info { margin-top: 10px; font-size: 12px; color: #333; font-weight: 500; }
   </style>
@@ -44,9 +32,8 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-// --- KONFIGURASI OPTIMASI SELAT ---
-const GRID_STEP = 0.008;      // Cukup rapat untuk selat sempit (Bali-Jawa)
-const K_NEAREST = 25;       // Koneksi lebih banyak agar rute lebih fleksibel
+const GRID_STEP = 0.01;      // Sedikit diperbesar agar performa stabil tapi tetap akurat
+const K_NEAREST = 30;       // Ditambah agar jaringan tidak mudah terputus
 const COLLISION_MARGIN = 0.001; 
 
 var map = L.map('map').setView([-8.4, 115.1], 9);
@@ -59,49 +46,39 @@ let start = null, end = null;
 let startMarker, endMarker, routeLine;
 let mode = null;
 
-// --- 1. LOAD DATA ---
 fetch('islands.json')
   .then(res => res.json())
   .then(data => {
     islands = data.islands;
     islands.forEach(isl => {
-      if (isl.polygon[0] !== isl.polygon[isl.polygon.length - 1]) {
-        isl.polygon.push(isl.polygon[0]);
-      }
-      L.polygon(isl.polygon, {color: 'red', weight: 1, fillOpacity: 0.15, interactive: false}).addTo(map);
+      if (isl.polygon[0] !== isl.polygon[isl.polygon.length - 1]) isl.polygon.push(isl.polygon[0]);
+      L.polygon(isl.polygon, {color: 'red', weight: 1, fillOpacity: 0.1, interactive: false}).addTo(map);
     });
-
-    document.getElementById('status').innerText = "Status: Memetakan Selat...";
+    document.getElementById('status').innerText = "Status: Membangun Jaringan Laut...";
     setTimeout(() => {
       generateNodes();
       connectGraph();
-      document.getElementById('status').innerText = "Status: Siap! Silakan pilih rute.";
+      document.getElementById('status').innerText = "Status: Siap! Silakan tentukan rute.";
     }, 100);
   });
 
-// --- 2. GEOMETRY ENGINE ---
 function pointInPolygon(p, vs) {
   let x = p[0], y = p[1], inside = false;
   for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
-    let xi = vs[i][0], yi = vs[i][1];
-    let xj = vs[j][0], yj = vs[j][1];
-    let intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-    if (intersect) inside = !inside;
+    let xi = vs[i][0], yi = vs[i][1], xj = vs[j][0], yj = vs[j][1];
+    if (((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
   }
   return inside;
 }
 
 function isBlocked(p) {
-  for (let isl of islands) {
-    if (pointInPolygon(p, isl.polygon)) return true;
-  }
+  for (let isl of islands) { if (pointInPolygon(p, isl.polygon)) return true; }
   return false;
 }
 
 function canSee(a, b) {
   let d = dist(a, b);
-  // Pengecekan tabrakan lebih rapat (per 0.002 derajat) agar tidak tembus daratan tipis
-  let steps = Math.max(10, Math.ceil(d / 0.002)); 
+  let steps = Math.max(12, Math.ceil(d / 0.005)); 
   for (let i = 0; i <= steps; i++) {
     let t = i / steps;
     let p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
@@ -110,22 +87,14 @@ function canSee(a, b) {
   return true;
 }
 
-function dist(a, b) {
-  return Math.hypot(a[0] - b[0], a[1] - b[1]);
-}
+function dist(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
 
-// --- 3. GRAPH GENERATION ---
 function generateNodes() {
-  // Area difokuskan agar tidak memproses seluruh dunia
-  const latMin = -9.0, latMax = -7.9;
-  const lngMin = 114.3, lngMax = 115.8;
-
-  for (let lat = latMin; lat < latMax; lat += GRID_STEP) {
-    for (let lng = lngMin; lng < lngMax; lng += GRID_STEP) {
+  // Area diperluas sedikit ke utara agar mencakup persimpangan rute kamu
+  for (let lat = -9.2; lat < -7.5; lat += GRID_STEP) {
+    for (let lng = 114.0; lng < 116.0; lng += GRID_STEP) {
       let p = [lat, lng];
-      if (!isBlocked(p)) {
-        nodes.push({ id: nodes.length, coord: p });
-      }
+      if (!isBlocked(p)) nodes.push({ id: nodes.length, coord: p });
     }
   }
 }
@@ -134,41 +103,29 @@ function connectGraph() {
   nodes.forEach(a => {
     edges[a.id] = [];
     let neighbors = nodes
-      .filter(b => b.id !== a.id && dist(a.coord, b.coord) < GRID_STEP * 5) // Batasi radius pencarian
+      .filter(b => b.id !== a.id)
       .map(b => ({ id: b.id, d: dist(a.coord, b.coord) }))
       .sort((x, y) => x.d - y.d)
-      .slice(0, K_NEAREST);
+      .slice(0, K_NEAREST); // Ambil K tetangga terdekat tanpa batasan radius kaku
 
     neighbors.forEach(n => {
-      if (canSee(a.coord, nodes[n.id].coord)) {
-        edges[a.id].push(n.id);
-      }
+      if (canSee(a.coord, nodes[n.id].coord)) edges[a.id].push(n.id);
     });
   });
 }
 
-// --- 4. ALGORITMA A* ---
 function astar(startNode, endNode) {
-  let open = [startNode.id];
-  let cameFrom = {};
-  let gScore = {};
-  let fScore = {};
-
+  let open = [startNode.id], cameFrom = {}, gScore = {}, fScore = {};
   gScore[startNode.id] = 0;
   fScore[startNode.id] = dist(startNode.coord, endNode.coord);
 
   while (open.length > 0) {
     let currentId = open.reduce((a, b) => fScore[a] < fScore[b] ? a : b);
-
-    if (currentId === endNode.id) {
-      return reconstructPath(cameFrom, currentId);
-    }
-
+    if (currentId === endNode.id) return reconstructPath(cameFrom, currentId);
     open = open.filter(id => id !== currentId);
 
     for (let neighborId of (edges[currentId] || [])) {
       let tentativeG = gScore[currentId] + dist(nodes[currentId].coord, nodes[neighborId].coord);
-
       if (gScore[neighborId] === undefined || tentativeG < gScore[neighborId]) {
         cameFrom[neighborId] = currentId;
         gScore[neighborId] = tentativeG;
@@ -182,20 +139,15 @@ function astar(startNode, endNode) {
 
 function reconstructPath(cameFrom, current) {
   let path = [current];
-  while (cameFrom[current] !== undefined) {
-    current = cameFrom[current];
-    path.push(current);
-  }
+  while (cameFrom[current] !== undefined) { current = cameFrom[current]; path.push(current); }
   return path.reverse().map(id => nodes[id].coord);
 }
 
-// --- 5. UI & EXECUTION ---
 function setMode(m) { mode = m; }
 
 map.on('click', e => {
   let p = [e.latlng.lat, e.latlng.lng];
   if (isBlocked(p)) { alert("Titik berada di daratan!"); return; }
-
   if (mode === 'start') {
     start = p;
     if (startMarker) map.removeLayer(startMarker);
@@ -208,34 +160,33 @@ map.on('click', e => {
 });
 
 function runRoute() {
-  if (!start || !end) { alert("Tentukan Start dan End dulu!"); return; }
-  document.getElementById('status').innerText = "Status: Mencari rute terbaik...";
+  if (!start || !end) { alert("Tentukan Start dan End!"); return; }
+  document.getElementById('status').innerText = "Status: Menghitung rute panjang...";
 
   let sNode = { id: nodes.length, coord: start };
   let eNode = { id: nodes.length + 1, coord: end };
   
-  nodes.push(sNode, eNode);
+  // Hubungkan Start/End ke grid dengan radius lebih toleran (0.3 derajat)
   [sNode, eNode].forEach(tmp => {
     edges[tmp.id] = [];
-    nodes.forEach(n => {
-      // Radius koneksi titik klik diperlebar agar pasti nyambung ke grid
-      if (n.id !== tmp.id && dist(tmp.coord, n.coord) < 0.1 && canSee(tmp.coord, n.coord)) {
-        edges[tmp.id].push(n.id);
-        edges[n.id].push(tmp.id);
-      }
-    });
+    nodes.filter(n => dist(tmp.coord, n.coord) < 0.3)
+         .forEach(n => {
+           if (canSee(tmp.coord, n.coord)) {
+             edges[tmp.id].push(n.id);
+             if (!edges[n.id]) edges[n.id] = [];
+             edges[n.id].push(tmp.id);
+           }
+         });
   });
 
   let path = astar(sNode, eNode);
-
   if (path.length > 0) {
     if (routeLine) map.removeLayer(routeLine);
-    routeLine = L.polyline(path, {color: '#007bff', weight: 6, opacity: 0.8}).addTo(map);
+    routeLine = L.polyline(path, {color: '#ff4400', weight: 5, opacity: 0.8}).addTo(map);
     map.fitBounds(routeLine.getBounds());
     document.getElementById('status').innerText = "Status: Rute ditemukan!";
   } else {
-    document.getElementById('status').innerText = "Status: Gagal menemukan rute.";
-    alert("Rute tidak ditemukan. Coba pindahkan titik sedikit lebih ke tengah laut.");
+    alert("Gagal menghubungkan jaringan. Coba klik sedikit lebih jauh dari pantai.");
   }
 }
 </script>
