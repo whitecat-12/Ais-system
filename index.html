@@ -205,35 +205,69 @@ map.on('click', e => {
   }
 });
 
+// GANTI FUNGSI runRoute() LAMA DENGAN INI:
+
 function runRoute() {
   if (!start || !end) { alert("Tentukan Start dan End dulu!"); return; }
 
-  // Hubungkan titik start/end sementara ke graph
-  let sNode = { id: nodes.length, coord: start };
-  let eNode = { id: nodes.length + 1, coord: end };
+  // Hapus rute lama jika ada
+  if (routeLine) map.removeLayer(routeLine);
+
+  // Buat ID sementara untuk start dan end
+  let sId = nodes.length;
+  let eId = nodes.length + 1;
   
-  // Daftarkan sementara ke edges
-  nodes.push(sNode, eNode);
+  let sNode = { id: sId, coord: start };
+  let eNode = { id: eId, coord: end };
+
+  // Tambahkan ke daftar node sementara
+  let tempNodes = [...nodes, sNode, eNode];
+  
+  // Reset edges untuk ID sementara
+  edges[sId] = [];
+  edges[eId] = [];
+
+  // Strategi penyambungan: Cari 10 node terdekat yang terlihat (Line of Sight)
   [sNode, eNode].forEach(tmp => {
-    edges[tmp.id] = [];
-    nodes.forEach(n => {
-      if (n.id !== tmp.id && dist(tmp.coord, n.coord) < 0.5 && canSee(tmp.coord, n.coord)) {
-        edges[tmp.id].push(n.id);
-        edges[n.id].push(tmp.id);
+    let candidates = nodes
+      .map(n => ({ id: n.id, d: dist(tmp.coord, n.coord) }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 20); // Ambil 20 kandidat terdekat
+
+    let connected = 0;
+    candidates.forEach(c => {
+      if (canSee(tmp.coord, nodes[c.id].coord)) {
+        edges[tmp.id].push(c.id);
+        if (!edges[c.id]) edges[c.id] = [];
+        edges[c.id].push(tmp.id);
+        connected++;
       }
     });
+    console.log(`Node ${tmp.id === sId ? 'Start' : 'End'} terhubung ke ${connected} node grid.`);
   });
 
+  // Jalankan A*
   let path = astar(sNode, eNode);
 
   if (path.length > 0) {
-    if (routeLine) map.removeLayer(routeLine);
-    routeLine = L.polyline(path, {color: 'blue', weight: 5, opacity: 0.7}).addTo(map);
-    map.fitBounds(routeLine.getBounds());
+    routeLine = L.polyline(path, {
+      color: '#007bff', 
+      weight: 6, 
+      opacity: 0.8,
+      lineJoin: 'round'
+    }).addTo(map);
+    map.fitBounds(routeLine.getBounds(), {padding: [50, 50]});
   } else {
-    alert("Maaf, rute tidak ditemukan. Coba dekatkan titik ke laut terbuka.");
+    if (canSee(start, end)) {
+        routeLine = L.polyline([start, end], {color: 'green', weight: 6}).addTo(map);
+        alert("Rute Langsung (Tanpa hambatan)");
+    } else {
+        alert("Rute tetap tidak ditemukan. Pastikan titik tidak terkurung daratan/poligon.");
+    }
   }
+
 }
+
 </script>
 </body>
 </html>
