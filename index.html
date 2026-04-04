@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Routing Kapal (Google Maps Style - FIX KNN)</title>
+  <title>Routing Kapal (FIX CELAH SEMPIT)</title>
   <meta charset="utf-8" />
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -57,7 +57,7 @@ fetch('islands.json')
   });
 
   generateNodes();
-  connectGraph(); // 🔥 sudah pakai KNN
+  connectGraph();
 });
 
 // ==========================
@@ -77,18 +77,36 @@ function pointInPolygon(p, vs){
   return inside;
 }
 
+// 🔥 FIX: collision lebih toleran
 function isBlocked(p){
+
+  let margin = 0.01; // kecil = bisa masuk celah
+
   for(let isl of islands){
+
     if(pointInPolygon(p, isl.polygon)) return true;
+
+    for(let dx=-margin; dx<=margin; dx+=margin){
+      for(let dy=-margin; dy<=margin; dy+=margin){
+
+        let np=[p[0]+dx,p[1]+dy];
+
+        if(pointInPolygon(np, isl.polygon)){
+          return true;
+        }
+      }
+    }
   }
+
   return false;
 }
 
 // ==========================
-// LINE CHECK
+// LINE CHECK (lebih longgar)
 // ==========================
 function canSee(a,b){
-  let steps=20;
+
+  let steps=10; // 🔥 lebih longgar biar celah kebaca
 
   for(let i=0;i<=steps;i++){
     let t=i/steps;
@@ -98,15 +116,16 @@ function canSee(a,b){
     ];
     if(isBlocked(p)) return false;
   }
+
   return true;
 }
 
 // ==========================
-// AUTO NODE
+// NODE LEBIH RAPAT 🔥
 // ==========================
 function generateNodes(){
 
-  let step=0.5;
+  let step=0.2; // 🔥 sebelumnya 0.5 (terlalu jarang)
 
   for(let lat=-10; lat<0; lat+=step){
     for(let lng=105; lng<120; lng+=step){
@@ -126,16 +145,15 @@ function generateNodes(){
 }
 
 // ==========================
-// 🔥 CONNECT GRAPH (KNN FIX)
+// CONNECT GRAPH (KNN UPGRADE)
 // ==========================
 function connectGraph(){
 
-  let K = 5; // jumlah tetangga terdekat
+  let K = 8; // 🔥 lebih fleksibel dari 5
 
   nodes.forEach(a=>{
     edges[a.id] = [];
 
-    // urutkan berdasarkan jarak
     let sorted = nodes
       .filter(b => b.id !== a.id)
       .map(b => ({
@@ -151,10 +169,8 @@ function connectGraph(){
 
       if(canSee(a.coord, b.coord)){
 
-        // forward
         edges[a.id].push(b.id);
 
-        // 🔥 backward (bi-directional)
         if(!edges[b.id]) edges[b.id] = [];
         if(!edges[b.id].includes(a.id)){
           edges[b.id].push(a.id);
@@ -163,7 +179,7 @@ function connectGraph(){
     });
   });
 
-  console.log("Graph KNN siap:", edges);
+  console.log("Graph siap (celah OK)");
 }
 
 // ==========================
@@ -210,7 +226,6 @@ function astar(startNode,endNode){
         came[nb]=current;
         g[nb]=temp;
 
-        // 🔥 bikin jalur lebih lurus
         f[nb]=temp + dist(nodes[nb].coord,endNode.coord)*1.1;
 
         if(!open.includes(nb)) open.push(nb);
