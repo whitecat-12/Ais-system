@@ -1,14 +1,13 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Routing Kapal Graph (Like Google Maps)</title>
+  <title>Routing Kapal (Google Maps Style)</title>
   <meta charset="utf-8" />
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
   <style>
     #map { height: 100vh; }
-
     .panel {
       position: absolute;
       top: 10px;
@@ -18,11 +17,6 @@
       border-radius: 10px;
       z-index: 1000;
     }
-
-    button {
-      margin: 5px;
-      padding: 8px;
-    }
   </style>
 </head>
 <body>
@@ -31,7 +25,6 @@
   <button onclick="setMode('start')">Start</button>
   <button onclick="setMode('end')">End</button>
   <button onclick="runRoute()">Cari Rute</button>
-  <button onclick="resetAll()">Reset</button>
 </div>
 
 <div id="map"></div>
@@ -46,115 +39,164 @@ var map = L.map('map').setView([-7,110],6);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 // ==========================
-// GLOBAL
-// ==========================
-let mode = null;
-let start = null;
-let end = null;
-let startMarker, endMarker, routeLine;
+let islands=[];
+let nodes=[];
+let edges={};
+
+let start=null,end=null;
+let startMarker,endMarker,routeLine;
+let mode=null;
 
 // ==========================
-// NODE GRAPH (JALUR LAUT)
-// 👉 TAMBAH SENDIRI SESUAI DATA PULAU
+// LOAD ISLAND
 // ==========================
-let nodes = [
-  {id:0, coord:[-7.5,110]},
-  {id:1, coord:[-7.2,111]},
-  {id:2, coord:[-6.8,112]},
-  {id:3, coord:[-6.5,113]},
-  {id:4, coord:[-7.0,114]},
-  {id:5, coord:[-7.8,112]},
-];
+fetch('islands.json')
+.then(res=>res.json())
+.then(data=>{
+  islands=data.islands;
 
-// koneksi antar node
-let edges = {
-  0:[1],
-  1:[0,2,5],
-  2:[1,3],
-  3:[2,4],
-  4:[3],
-  5:[1]
-};
+  islands.forEach(i=>{
+    i.polygon.push(i.polygon[0]);
+    L.polygon(i.polygon,{color:'red'}).addTo(map);
+  });
 
-// ==========================
-function setMode(m){ mode = m; }
-
-map.on('click', function(e){
-  let p = [e.latlng.lat, e.latlng.lng];
-
-  if(mode === 'start'){
-    start = p;
-    if(startMarker) map.removeLayer(startMarker);
-    startMarker = L.marker(p).addTo(map);
-  }
-
-  if(mode === 'end'){
-    end = p;
-    if(endMarker) map.removeLayer(endMarker);
-    endMarker = L.marker(p).addTo(map);
-  }
+  generateNodes();
+  connectGraph();
 });
 
 // ==========================
-// UTIL
+// GEOMETRY
 // ==========================
-function dist(a,b){
-  return Math.hypot(a[0]-b[0], a[1]-b[1]);
+function pointInPolygon(p, vs){
+  let x=p[0], y=p[1], inside=false;
+  for(let i=0,j=vs.length-1;i<vs.length;j=i++){
+    let xi=vs[i][0], yi=vs[i][1];
+    let xj=vs[j][0], yj=vs[j][1];
+
+    let intersect=((yi>y)!=(yj>y)) &&
+      (x<(xj-xi)*(y-yi)/(yj-yi)+xi);
+
+    if(intersect) inside=!inside;
+  }
+  return inside;
 }
 
-// cari node terdekat
-function nearestNode(point){
-  let best = nodes[0];
-  let min = dist(point, best.coord);
+function isBlocked(p){
+  for(let isl of islands){
+    if(pointInPolygon(p, isl.polygon)) return true;
+  }
+  return false;
+}
 
-  for(let n of nodes){
-    let d = dist(point, n.coord);
-    if(d < min){
-      min = d;
-      best = n;
+// ==========================
+// LINE CHECK
+// ==========================
+function canSee(a,b){
+  let steps=20;
+
+  for(let i=0;i<=steps;i++){
+    let t=i/steps;
+    let p=[
+      a[0]+(b[0]-a[0])*t,
+      a[1]+(b[1]-a[1])*t
+    ];
+    if(isBlocked(p)) return false;
+  }
+  return true;
+}
+
+// ==========================
+// AUTO GENERATE NODE 🔥
+// ==========================
+function generateNodes(){
+
+  let step=0.5;
+
+  for(let lat=-10; lat<0; lat+=step){
+    for(let lng=105; lng<120; lng+=step){
+
+      let p=[lat,lng];
+
+      if(!isBlocked(p)){
+        nodes.push({
+          id:nodes.length,
+          coord:p
+        });
+      }
     }
   }
 
-  return best;
+  console.log("Node:",nodes.length);
 }
 
 // ==========================
-// A* GRAPH (RINGAN BANGET)
+// CONNECT GRAPH 🔥
 // ==========================
-function astar(startNode, endNode){
+function connectGraph(){
 
-  let open = [startNode.id];
-  let came = {};
-  let g = {}, f = {};
+  nodes.forEach(a=>{
+    edges[a.id]=[];
 
-  g[startNode.id] = 0;
-  f[startNode.id] = dist(startNode.coord, endNode.coord);
+    nodes.forEach(b=>{
+      if(a.id===b.id) return;
+
+      if(dist(a.coord,b.coord) < 1){ // radius koneksi
+        if(canSee(a.coord,b.coord)){
+          edges[a.id].push(b.id);
+        }
+      }
+    });
+  });
+
+  console.log("Graph ready");
+}
+
+// ==========================
+function dist(a,b){
+  return Math.hypot(a[0]-b[0],a[1]-b[1]);
+}
+
+// ==========================
+function nearestNode(p){
+  return nodes.reduce((a,b)=>
+    dist(p,a.coord)<dist(p,b.coord)?a:b
+  );
+}
+
+// ==========================
+// A*
+// ==========================
+function astar(startNode,endNode){
+
+  let open=[startNode.id];
+  let came={}, g={}, f={};
+
+  g[startNode.id]=0;
+  f[startNode.id]=dist(startNode.coord,endNode.coord);
 
   while(open.length){
 
-    let current = open.reduce((a,b)=>f[a]<f[b]?a:b);
+    let current=open.reduce((a,b)=>f[a]<f[b]?a:b);
 
-    if(current === endNode.id){
-      return reconstruct(came, current);
+    if(current===endNode.id){
+      return reconstruct(came,current);
     }
 
-    open = open.filter(n=>n!==current);
+    open=open.filter(n=>n!==current);
 
     for(let nb of edges[current]){
 
-      let temp = g[current] + dist(
+      let temp=g[current]+dist(
         nodes[current].coord,
         nodes[nb].coord
       );
 
-      if(g[nb] === undefined || temp < g[nb]){
-        came[nb] = current;
-        g[nb] = temp;
-        f[nb] = temp + dist(nodes[nb].coord, endNode.coord);
+      if(g[nb]===undefined || temp<g[nb]){
+        came[nb]=current;
+        g[nb]=temp;
+        f[nb]=temp+dist(nodes[nb].coord,endNode.coord);
 
-        if(!open.includes(nb)){
-          open.push(nb);
-        }
+        if(!open.includes(nb)) open.push(nb);
       }
     }
   }
@@ -163,19 +205,17 @@ function astar(startNode, endNode){
 }
 
 // ==========================
-function reconstruct(came, cur){
-  let path = [cur];
+function reconstruct(came,cur){
+  let path=[cur];
 
-  while(came[cur] !== undefined){
-    cur = came[cur];
+  while(came[cur]!==undefined){
+    cur=came[cur];
     path.push(cur);
   }
 
   return path.reverse().map(i=>nodes[i].coord);
 }
 
-// ==========================
-// SMOOTH
 // ==========================
 function smooth(path){
   let out=[];
@@ -197,25 +237,24 @@ function smooth(path){
 // ==========================
 function runRoute(){
 
-  if(!start || !end){
-    alert("Pilih start & end!");
+  if(!start||!end){
+    alert("Pilih titik!");
     return;
   }
 
-  let sNode = nearestNode(start);
-  let eNode = nearestNode(end);
+  let s=nearestNode(start);
+  let e=nearestNode(end);
 
-  let path = astar(sNode, eNode);
+  let path=astar(s,e);
 
-  // gabungkan dengan titik asli
   path.unshift(start);
   path.push(end);
 
-  path = smooth(path);
+  path=smooth(path);
 
   if(routeLine) map.removeLayer(routeLine);
 
-  routeLine = L.polyline(path,{
+  routeLine=L.polyline(path,{
     color:'blue',
     weight:4
   }).addTo(map);
@@ -224,14 +263,23 @@ function runRoute(){
 }
 
 // ==========================
-function resetAll(){
-  if(startMarker) map.removeLayer(startMarker);
-  if(endMarker) map.removeLayer(endMarker);
-  if(routeLine) map.removeLayer(routeLine);
+function setMode(m){mode=m;}
 
-  start = null;
-  end = null;
-}
+map.on('click',e=>{
+  let p=[e.latlng.lat,e.latlng.lng];
+
+  if(mode==='start'){
+    start=p;
+    if(startMarker) map.removeLayer(startMarker);
+    startMarker=L.marker(p).addTo(map);
+  }
+
+  if(mode==='end'){
+    end=p;
+    if(endMarker) map.removeLayer(endMarker);
+    endMarker=L.marker(p).addTo(map);
+  }
+});
 </script>
 
 </body>
