@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Routing Kapal (Optimized - Smart Path)</title>
+  <title>Routing Kapal (FULL OPTIMIZED)</title>
   <meta charset="utf-8" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
@@ -15,27 +15,42 @@
       padding: 15px;
       border-radius: 8px;
       z-index: 1000;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+      width: 220px;
     }
     button {
-      padding: 8px 12px;
+      width: 100%;
+      margin-bottom: 5px;
+      padding: 10px;
       cursor: pointer;
       border: 1px solid #ccc;
       background: white;
       border-radius: 4px;
+      font-weight: bold;
     }
     button:hover { background: #f0f0f0; }
-    .info { margin-top: 10px; font-size: 12px; color: #666; }
+    .btn-run { background: #28a745 !important; color: white; border: none; }
+    .btn-run:hover { background: #218838 !important; }
+    .info { margin-top: 10px; font-size: 12px; color: #333; line-height: 1.4; }
+    .status-badge { font-weight: bold; color: #d9534f; }
   </style>
 </head>
 <body>
 
 <div class="panel">
-  <strong>Kontrol Rute:</strong><br><br>
-  <button onclick="setMode('start')">1. Klik Start</button>
-  <button onclick="setMode('end')">2. Klik End</button>
-  <button onclick="runRoute()" style="background: #4CAF50; color: white; border: none;">3. Cari Rute</button>
-  <div class="info" id="status">Status: Tunggu data pulau...</div>
+  <strong>Navigasi Kapal</strong>
+  <div class="info">
+    1. Klik tombol posisi<br>
+    2. Klik di peta (Laut)<br>
+    3. Cari Rute
+  </div>
+  <hr>
+  <button onclick="setMode('start')">📍 Set Start</button>
+  <button onclick="setMode('end')">🏁 Set End</button>
+  <button class="btn-run" onclick="runRoute()">🚢 CARI RUTE</button>
+  <div class="info">
+    Status: <span id="status" class="status-badge">Memuat data...</span>
+  </div>
 </div>
 
 <div id="map"></div>
@@ -43,10 +58,10 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-// --- KONFIGURASI ---
-const GRID_STEP = 0.05; // Lebih kecil = lebih akurat di selat sempit (Saran: 0.03 - 0.08)
-const K_NEAREST = 15;   // Jumlah koneksi antar node (Saran: 10 - 20)
-const COLLISION_MARGIN = 0.005; // Jarak aman dari pantai
+// --- KONFIGURASI ENGINE ---
+const GRID_STEP = 0.04;    // Kerapatan titik (0.04 ≈ 4.4km). Kecilkan untuk selat sangat sempit.
+const K_NEAREST = 12;      // Jumlah koneksi antar titik grid.
+const SEARCH_RANGE = 0.8;  // Jangkauan koneksi titik klik ke grid (dalam derajat).
 
 var map = L.map('map').setView([-8.4, 115.1], 9);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
@@ -58,28 +73,32 @@ let start = null, end = null;
 let startMarker, endMarker, routeLine;
 let mode = null;
 
-// --- 1. LOAD DATA ---
+// --- 1. LOAD DATA PULAU ---
 fetch('islands.json')
   .then(res => res.json())
   .then(data => {
     islands = data.islands;
     islands.forEach(isl => {
-      // Pastikan poligon tertutup
       if (isl.polygon[0] !== isl.polygon[isl.polygon.length - 1]) {
         isl.polygon.push(isl.polygon[0]);
       }
-      L.polygon(isl.polygon, {color: 'red', weight: 1, fillOpacity: 0.2}).addTo(map);
+      L.polygon(isl.polygon, {color: 'red', weight: 1, fillOpacity: 0.15, interactive: false}).addTo(map);
     });
 
-    document.getElementById('status').innerText = "Status: Menghitung Node...";
+    document.getElementById('status').innerText = "Menghitung Grid...";
     setTimeout(() => {
       generateNodes();
       connectGraph();
-      document.getElementById('status').innerText = "Status: Siap! Silakan pilih rute.";
+      document.getElementById('status').innerText = "Siap!";
+      document.getElementById('status').style.color = "#28a745";
     }, 100);
+  })
+  .catch(err => {
+    document.getElementById('status').innerText = "Gagal load islands.json";
+    console.error(err);
   });
 
-// --- 2. GEOMETRY ENGINE ---
+// --- 2. GEOMETRY & COLLISION ---
 function pointInPolygon(p, vs) {
   let x = p[0], y = p[1], inside = false;
   for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
@@ -98,11 +117,9 @@ function isBlocked(p) {
   return false;
 }
 
-// Deteksi tabrakan garis yang lebih presisi
 function canSee(a, b) {
   let d = dist(a, b);
-  // Cek setiap 0.01 derajat (~1km) di sepanjang garis
-  let steps = Math.max(10, Math.ceil(d / 0.01)); 
+  let steps = Math.max(8, Math.ceil(d / 0.01)); 
   for (let i = 0; i <= steps; i++) {
     let t = i / steps;
     let p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
@@ -115,20 +132,23 @@ function dist(a, b) {
   return Math.hypot(a[0] - b[0], a[1] - b[1]);
 }
 
-// --- 3. GRAPH GENERATION ---
+// --- 3. JARINGAN NAVIGASI (GRID) ---
 function generateNodes() {
-  // Area Bali dan sekitarnya
-  for (let lat = -9.0; lat < -7.9; lat += GRID_STEP) {
-    for (let lng = 114.4; lng < 115.8; lng += GRID_STEP) {
+  nodes = [];
+  // Mencakup area Bali dan sekitarnya (Jawa Timur - Lombok)
+  for (let lat = -9.2; lat < -7.8; lat += GRID_STEP) {
+    for (let lng = 114.2; lng < 116.0; lng += GRID_STEP) {
       let p = [lat, lng];
       if (!isBlocked(p)) {
         nodes.push({ id: nodes.length, coord: p });
       }
     }
   }
+  console.log("Nodes generated:", nodes.length);
 }
 
 function connectGraph() {
+  edges = {};
   nodes.forEach(a => {
     edges[a.id] = [];
     let neighbors = nodes
@@ -143,9 +163,10 @@ function connectGraph() {
       }
     });
   });
+  console.log("Graph connected.");
 }
 
-// --- 4. ALGORITMA A* ---
+// --- 4. PATHFINDING (A*) ---
 function astar(startNode, endNode) {
   let open = [startNode.id];
   let cameFrom = {};
@@ -164,7 +185,9 @@ function astar(startNode, endNode) {
 
     open = open.filter(id => id !== currentId);
 
-    for (let neighborId of (edges[currentId] || [])) {
+    if (!edges[currentId]) continue;
+
+    for (let neighborId of edges[currentId]) {
       let tentativeG = gScore[currentId] + dist(nodes[currentId].coord, nodes[neighborId].coord);
 
       if (gScore[neighborId] === undefined || tentativeG < gScore[neighborId]) {
@@ -184,88 +207,86 @@ function reconstructPath(cameFrom, current) {
     current = cameFrom[current];
     path.push(current);
   }
-  return path.reverse().map(id => nodes[id].coord);
+  // Mapping ID kembali ke koordinat asli
+  return path.reverse().map(id => {
+    let found = nodes.find(n => n.id === id);
+    return found ? found.coord : null;
+  }).filter(c => c !== null);
 }
 
-// --- 5. UI & EXECUTION ---
+// --- 5. UI & LOGIC ---
 function setMode(m) { mode = m; }
 
 map.on('click', e => {
   let p = [e.latlng.lat, e.latlng.lng];
-  if (isBlocked(p)) { alert("Titik berada di daratan!"); return; }
+  if (isBlocked(p)) { alert("Jangan klik di daratan!"); return; }
 
   if (mode === 'start') {
     start = p;
     if (startMarker) map.removeLayer(startMarker);
-    startMarker = L.marker(p).addTo(map).bindPopup("Start").openPopup();
+    startMarker = L.marker(p).addTo(map).bindPopup("Titik Awal").openPopup();
   } else if (mode === 'end') {
     end = p;
     if (endMarker) map.removeLayer(endMarker);
-    endMarker = L.marker(p).addTo(map).bindPopup("End").openPopup();
+    endMarker = L.marker(p).addTo(map).bindPopup("Titik Tujuan").openPopup();
   }
 });
 
-// GANTI FUNGSI runRoute() LAMA DENGAN INI:
-
 function runRoute() {
   if (!start || !end) { alert("Tentukan Start dan End dulu!"); return; }
-
-  // Hapus rute lama jika ada
   if (routeLine) map.removeLayer(routeLine);
 
-  // Buat ID sementara untuk start dan end
-  let sId = nodes.length;
-  let eId = nodes.length + 1;
-  
+  document.getElementById('status').innerText = "Mencari rute...";
+
+  // 1. Tambahkan node sementara Start & End
+  let sId = nodes.length + 10000;
+  let eId = nodes.length + 10001;
   let sNode = { id: sId, coord: start };
   let eNode = { id: eId, coord: end };
 
-  // Tambahkan ke daftar node sementara
-  let tempNodes = [...nodes, sNode, eNode];
-  
-  // Reset edges untuk ID sementara
+  // 2. Hubungkan Start/End ke grid terdekat
   edges[sId] = [];
   edges[eId] = [];
 
-  // Strategi penyambungan: Cari 10 node terdekat yang terlihat (Line of Sight)
   [sNode, eNode].forEach(tmp => {
-    let candidates = nodes
+    let targets = nodes
       .map(n => ({ id: n.id, d: dist(tmp.coord, n.coord) }))
       .sort((a, b) => a.d - b.d)
-      .slice(0, 20); // Ambil 20 kandidat terdekat
+      .slice(0, 25); // Cek 25 titik terdekat untuk fleksibilitas
 
-    let connected = 0;
-    candidates.forEach(c => {
-      if (canSee(tmp.coord, nodes[c.id].coord)) {
-        edges[tmp.id].push(c.id);
-        if (!edges[c.id]) edges[c.id] = [];
-        edges[c.id].push(tmp.id);
-        connected++;
+    targets.forEach(t => {
+      if (t.d < SEARCH_RANGE && canSee(tmp.coord, nodes[t.id].coord)) {
+        edges[tmp.id].push(t.id);
+        if (!edges[t.id]) edges[t.id] = [];
+        edges[t.id].push(tmp.id);
       }
     });
-    console.log(`Node ${tmp.id === sId ? 'Start' : 'End'} terhubung ke ${connected} node grid.`);
   });
 
-  // Jalankan A*
+  // Masukkan sementara ke list nodes untuk referensi A*
+  let originalNodes = [...nodes];
+  nodes.push(sNode, eNode);
+
+  // 3. Eksekusi Pathfinding
   let path = astar(sNode, eNode);
 
   if (path.length > 0) {
     routeLine = L.polyline(path, {
       color: '#007bff', 
-      weight: 6, 
+      weight: 5, 
       opacity: 0.8,
-      lineJoin: 'round'
+      lineCap: 'round'
     }).addTo(map);
-    map.fitBounds(routeLine.getBounds(), {padding: [50, 50]});
+    map.fitBounds(routeLine.getBounds(), {padding: [30, 30]});
+    document.getElementById('status').innerText = "Rute Ditemukan!";
   } else {
-    if (canSee(start, end)) {
-        routeLine = L.polyline([start, end], {color: 'green', weight: 6}).addTo(map);
-        alert("Rute Langsung (Tanpa hambatan)");
-    } else {
-        alert("Rute tetap tidak ditemukan. Pastikan titik tidak terkurung daratan/poligon.");
-    }
+    document.getElementById('status').innerText = "Gagal!";
+    alert("Rute tidak ditemukan. Pastikan area laut tidak terputus grid.");
   }
 
+  // Cleanup: kembalikan nodes ke semula agar tidak menumpuk
+  nodes = originalNodes;
+}
 </script>
 </body>
 </html>
