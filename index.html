@@ -12,26 +12,24 @@
       background: white; padding: 15px;
       border-radius: 12px; z-index: 1000;
       box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-      width: 240px;
+      width: 250px;
     }
     button {
       width: 100%; margin-bottom: 8px; padding: 10px;
       cursor: pointer; border: 1px solid #ddd; background: #f8f9fa;
       border-radius: 6px; font-weight: bold; font-size: 13px;
     }
-    .btn-run  { background: #27ae60; color: white; border: none; }
-    .btn-clear{ background: #e74c3c; color: white; border: none; }
+    .btn-run   { background: #27ae60; color: white; border: none; }
+    .btn-clear { background: #e74c3c; color: white; border: none; }
     .status-box { margin-top: 10px; font-size: 12px; text-align: center; font-weight: bold; }
     #status { color: #e67e22; }
     .info { font-size: 11px; color: #888; margin-top: 8px; line-height: 1.5; }
-    #progressBar {
-      width: 100%; height: 6px; background: #eee;
-      border-radius: 3px; margin-top: 8px; display: none;
-    }
-    #progressFill {
-      height: 100%; background: #27ae60;
-      border-radius: 3px; width: 0%; transition: width 0.1s;
-    }
+    #progressBar { width:100%; height:6px; background:#eee; border-radius:3px; margin-top:8px; display:none; }
+    #progressFill { height:100%; background:#27ae60; border-radius:3px; width:0%; transition:width 0.1s; }
+    .cfg { font-size: 11px; margin-top: 10px; border-top: 1px solid #eee; padding-top: 8px; }
+    .cfg label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; color: #555; }
+    .cfg input[type=range] { width: 100px; }
+    .cfg span { font-weight: bold; color: #333; min-width: 36px; text-align: right; }
   </style>
 </head>
 <body>
@@ -44,7 +42,21 @@
   <button class="btn-clear" onclick="clearAll()">🗑️ Reset</button>
   <div class="status-box">Status: <span id="status">Memuat data pulau...</span></div>
   <div id="progressBar"><div id="progressFill"></div></div>
-  <div class="info" id="infoBox">Mendukung seluruh Indonesia. Grid dibangun dinamis saat routing.</div>
+
+  <div class="cfg">
+    <label>Grid Step
+      <input type="range" id="sliderStep" min="1" max="8" value="3" step="1"
+             oninput="document.getElementById('valStep').innerText=stepVal()+'°'">
+      <span id="valStep">0.03°</span>
+    </label>
+    <label>Selat Sempit
+      <input type="range" id="sliderFine" min="0" max="3" value="2" step="1"
+             oninput="document.getElementById('valFine').innerText=fineVal()+'×'">
+      <span id="valFine">2×</span>
+    </label>
+  </div>
+
+  <div class="info" id="infoBox">Grid adaptive — area titik lebih rapat untuk selat sempit.</div>
 </div>
 
 <div id="map"></div>
@@ -52,22 +64,26 @@
 
 <script>
 // ============================================================
-// KONFIGURASI — ubah GRID_STEP lebih kecil untuk akurasi lebih
-// tapi lebih lambat. 0.05 = cepat, 0.025 = detail selat sempit
+// SLIDER HELPERS
 // ============================================================
-const GRID_STEP   = 0.04;   // resolusi grid (derajat)
-const SEARCH_RAD  = 0.10;   // radius koneksi antar node
-const K_NEAREST   = 16;     // max tetangga per node
-const EXPAND_PAD  = 2.0;    // padding bounding box rute (derajat)
-const CHUNK_SIZE  = 300;    // node diproses per frame (cegah freeze)
-const MAX_ITER    = 800000; // batas iterasi A*
+function stepVal() {
+  return [0.01,0.02,0.03,0.04,0.05,0.06,0.07,0.08][+document.getElementById('sliderStep').value-1];
+}
+function fineVal() {
+  return +document.getElementById('sliderFine').value;
+}
+
+const EXPAND_PAD = 2.0;
+const K_NEAREST  = 20;
+const CHUNK_SIZE = 400;
+const MAX_ITER   = 1200000;
 
 // ============================================================
 // INIT MAP
 // ============================================================
 const map = L.map('map').setView([-2, 118], 5);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  { attribution: '© OpenStreetMap', maxZoom: 18 }).addTo(map);
+  { attribution:'© OpenStreetMap', maxZoom:18 }).addTo(map);
 
 let islands = [];
 let start = null, end = null, mode = null;
@@ -75,41 +91,35 @@ let routeLine, startMarker, endMarker;
 let isRouting = false;
 
 // ============================================================
-// LOAD & PREPROCESS ISLANDS.JSON
+// LOAD ISLANDS.JSON
 // ============================================================
 fetch('islands.json')
   .then(r => r.json())
   .then(data => {
     islands = data.islands;
     islands.forEach(isl => {
-      // Tutup polygon
       if (isl.polygon[0] !== isl.polygon[isl.polygon.length-1])
         isl.polygon.push(isl.polygon[0]);
-      // Bounding box — kunci performa isBlocked()
-      const lats = isl.polygon.map(p => p[0]);
-      const lngs = isl.polygon.map(p => p[1]);
+      const lats = isl.polygon.map(p=>p[0]);
+      const lngs = isl.polygon.map(p=>p[1]);
       isl.bbox = {
-        minLat: Math.min(...lats) - 0.001,
-        maxLat: Math.max(...lats) + 0.001,
-        minLng: Math.min(...lngs) - 0.001,
-        maxLng: Math.max(...lngs) + 0.001
+        minLat: Math.min(...lats)-0.002, maxLat: Math.max(...lats)+0.002,
+        minLng: Math.min(...lngs)-0.002, maxLng: Math.max(...lngs)+0.002
       };
-      L.polygon(isl.polygon, {
-        color:'#c0392b', weight:1, fillOpacity:0.15, interactive:false
-      }).addTo(map);
+      L.polygon(isl.polygon,{color:'#c0392b',weight:1,fillOpacity:0.15,interactive:false}).addTo(map);
     });
-    updateStatus("Siap — klik Start & End di laut ✅", "#27ae60");
+    updateStatus("Siap — klik Start & End di laut ✅","#27ae60");
   })
-  .catch(() => updateStatus("islands.json gagal dimuat ❌", "red"));
+  .catch(()=>updateStatus("islands.json gagal dimuat ❌","red"));
 
 // ============================================================
 // GEOMETRY
 // ============================================================
 function pointInPolygon(p, vs) {
-  let x=p[0], y=p[1], inside=false;
-  for (let i=0, j=vs.length-1; i<vs.length; j=i++) {
-    let xi=vs[i][0], yi=vs[i][1], xj=vs[j][0], yj=vs[j][1];
-    if (((yi>y)!==(yj>y)) && x<(xj-xi)*(y-yi)/(yj-yi)+xi) inside=!inside;
+  let x=p[0],y=p[1],inside=false;
+  for (let i=0,j=vs.length-1;i<vs.length;j=i++) {
+    let xi=vs[i][0],yi=vs[i][1],xj=vs[j][0],yj=vs[j][1];
+    if(((yi>y)!==(yj>y))&&x<(xj-xi)*(y-yi)/(yj-yi)+xi) inside=!inside;
   }
   return inside;
 }
@@ -117,196 +127,224 @@ function pointInPolygon(p, vs) {
 function isBlocked(p) {
   const lat=p[0], lng=p[1];
   for (const isl of islands) {
-    const b = isl.bbox;
-    if (lat<b.minLat||lat>b.maxLat||lng<b.minLng||lng>b.maxLng) continue;
-    if (pointInPolygon(p, isl.polygon)) return true;
+    const b=isl.bbox;
+    if(lat<b.minLat||lat>b.maxLat||lng<b.minLng||lng>b.maxLng) continue;
+    if(pointInPolygon(p,isl.polygon)) return true;
   }
   return false;
 }
 
+// step 0.005° ≈ 550m, cukup rapat untuk Selat Madura (~3km lebar)
 function canSee(a, b) {
-  const d = dist(a, b);
-  const steps = Math.max(6, Math.ceil(d / 0.01));
-  for (let i=1; i<steps; i++) {
-    const t = i/steps;
-    if (isBlocked([a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t])) return false;
+  const d=dist(a,b);
+  const steps=Math.max(8, Math.ceil(d/0.005));
+  for(let i=1;i<steps;i++){
+    const t=i/steps;
+    if(isBlocked([a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t])) return false;
   }
   return true;
 }
 
-function dist(a, b) { return Math.hypot(a[0]-b[0], a[1]-b[1]); }
+function dist(a,b){ return Math.hypot(a[0]-b[0],a[1]-b[1]); }
 
 // ============================================================
-// SPATIAL HASH INDEX — O(1) lookup tetangga terdekat
-// Ini kunci agar buildEdges tidak O(n²)
+// SPATIAL HASH INDEX
 // ============================================================
 function buildSpatialIndex(nodes, cellSize) {
-  const index = {};
-  for (const n of nodes) {
-    const cx = Math.floor(n.coord[0] / cellSize);
-    const cy = Math.floor(n.coord[1] / cellSize);
-    const key = `${cx},${cy}`;
-    if (!index[key]) index[key] = [];
-    index[key].push(n);
+  const idx={};
+  for(const n of nodes){
+    const k=`${Math.floor(n.coord[0]/cellSize)},${Math.floor(n.coord[1]/cellSize)}`;
+    (idx[k]||(idx[k]=[])).push(n);
   }
-  return index;
+  return idx;
 }
 
-function getNeighborCells(coord, cellSize, radius) {
-  const r = Math.ceil(radius / cellSize);
-  const cx = Math.floor(coord[0] / cellSize);
-  const cy = Math.floor(coord[1] / cellSize);
-  const result = [];
-  for (let dx=-r; dx<=r; dx++)
-    for (let dy=-r; dy<=r; dy++)
-      result.push(`${cx+dx},${cy+dy}`);
-  return result;
-}
-
-function getNearbyNodes(coord, spatialIndex, cellSize, radius) {
-  const cells = getNeighborCells(coord, cellSize, radius);
-  const nearby = [];
-  for (const key of cells) {
-    if (spatialIndex[key]) nearby.push(...spatialIndex[key]);
-  }
-  return nearby;
+function getNearbyNodes(coord, idx, cellSize, radius) {
+  const r=Math.ceil(radius/cellSize);
+  const cx=Math.floor(coord[0]/cellSize), cy=Math.floor(coord[1]/cellSize);
+  const out=[];
+  for(let dx=-r;dx<=r;dx++)
+    for(let dy=-r;dy<=r;dy++){
+      const c=idx[`${cx+dx},${cy+dy}`];
+      if(c) out.push(...c);
+    }
+  return out;
 }
 
 // ============================================================
-// GRID DINAMIS
+// ADAPTIVE GRID
+// Grid kasar untuk area luas + grid halus di sekitar titik klik
 // ============================================================
-function buildLocalGrid(ptA, ptB) {
-  let minLat = Math.min(ptA[0],ptB[0]) - EXPAND_PAD;
-  let maxLat = Math.max(ptA[0],ptB[0]) + EXPAND_PAD;
-  let minLng = Math.min(ptA[1],ptB[1]) - EXPAND_PAD;
-  let maxLng = Math.max(ptA[1],ptB[1]) + EXPAND_PAD;
+function buildAdaptiveGrid(ptA, ptB) {
+  const GRID  = stepVal();
+  const FINE  = fineVal();
+  const FSTEP = FINE>0 ? GRID/(FINE+1) : GRID;
+  const FRAD  = 1.2;  // radius area halus dalam derajat
 
-  // Clamp ke wilayah Indonesia + lautan sekitar
-  minLat = Math.max(minLat, -12);
-  maxLat = Math.min(maxLat,   8);
-  minLng = Math.max(minLng,  94);
-  maxLng = Math.min(maxLng, 142);
+  let minLat=Math.min(ptA[0],ptB[0])-EXPAND_PAD;
+  let maxLat=Math.max(ptA[0],ptB[0])+EXPAND_PAD;
+  let minLng=Math.min(ptA[1],ptB[1])-EXPAND_PAD;
+  let maxLng=Math.max(ptA[1],ptB[1])+EXPAND_PAD;
+  minLat=Math.max(minLat,-12); maxLat=Math.min(maxLat,8);
+  minLng=Math.max(minLng,94);  maxLng=Math.min(maxLng,142);
 
-  const nodes = [];
-  for (let lat=minLat; lat<=maxLat+1e-9; lat+=GRID_STEP) {
-    for (let lng=minLng; lng<=maxLng+1e-9; lng+=GRID_STEP) {
-      const p = [+lat.toFixed(6), +lng.toFixed(6)];
-      if (!isBlocked(p)) nodes.push({ id: nodes.length, coord: p });
+  const added=new Set();
+  const nodes=[];
+
+  const addNode=(lat,lng)=>{
+    const rlat=+lat.toFixed(5), rlng=+lng.toFixed(5);
+    const key=`${rlat}_${rlng}`;
+    if(added.has(key)) return;
+    added.add(key);
+    const p=[rlat,rlng];
+    if(!isBlocked(p)) nodes.push({id:nodes.length,coord:p});
+  };
+
+  // Grid kasar — seluruh area bounding box
+  for(let lat=minLat;lat<=maxLat+1e-9;lat+=GRID)
+    for(let lng=minLng;lng<=maxLng+1e-9;lng+=GRID)
+      addNode(lat,lng);
+
+  // Grid halus — sekitar titik A dan B
+  if(FINE>0){
+    for(const pt of [ptA,ptB]){
+      for(let lat=pt[0]-FRAD;lat<=pt[0]+FRAD+1e-9;lat+=FSTEP)
+        for(let lng=pt[1]-FRAD;lng<=pt[1]+FRAD+1e-9;lng+=FSTEP)
+          addNode(lat,lng);
     }
   }
+
+  nodes.forEach((n,i)=>n.id=i);
   return nodes;
 }
 
 // ============================================================
-// BUILD EDGES — pakai spatial index, bukan filter O(n²)
-// Dijalankan dalam chunk agar tidak freeze UI
+// BUILD EDGES ASYNC — chunk per frame, spatial index
 // ============================================================
-async function buildEdgesAsync(nodes, onProgress) {
-  const edges = {};
-  const spatialIndex = buildSpatialIndex(nodes, SEARCH_RAD);
+async function buildEdgesAsync(nodes, SRAD, onProgress) {
+  const edges={};
+  const idx=buildSpatialIndex(nodes,SRAD);
 
-  for (let i=0; i<nodes.length; i++) {
-    edges[i] = [];
-    const a = nodes[i];
-    const nearby = getNearbyNodes(a.coord, spatialIndex, SEARCH_RAD, SEARCH_RAD);
+  for(let i=0;i<nodes.length;i++){
+    edges[i]=[];
+    const a=nodes[i];
+    const nearby=getNearbyNodes(a.coord,idx,SRAD,SRAD);
+    const cands=nearby
+      .filter(b=>b.id!==i)
+      .map(b=>({id:b.id,d:dist(a.coord,b.coord)}))
+      .sort((x,y)=>x.d-y.d)
+      .slice(0,K_NEAREST);
+    for(const c of cands)
+      if(canSee(a.coord,nodes[c.id].coord)) edges[i].push(c.id);
 
-    // Sort dan ambil K_NEAREST terdekat
-    const candidates = nearby
-      .filter(b => b.id !== i)
-      .map(b => ({ id: b.id, d: dist(a.coord, b.coord) }))
-      .sort((x,y) => x.d-y.d)
-      .slice(0, K_NEAREST);
-
-    for (const c of candidates) {
-      if (canSee(a.coord, nodes[c.id].coord)) edges[i].push(c.id);
-    }
-
-    // Yield setiap CHUNK_SIZE node agar UI tidak freeze
-    if (i % CHUNK_SIZE === 0) {
-      onProgress(i / nodes.length);
-      await sleep(0); // beri browser kesempatan render
-    }
+    if(i%CHUNK_SIZE===0){ onProgress(i/nodes.length); await sleep(0); }
   }
   return edges;
 }
 
 // ============================================================
-// SAMBUNGKAN titik klik ke graph
+// ATTACH POINT — sambungkan titik klik ke graph
 // ============================================================
-function attachPoint(coord, nodes, edges, spatialIndex, idStr) {
-  edges[idStr] = [];
-  const nearby = getNearbyNodes(coord, spatialIndex, SEARCH_RAD, SEARCH_RAD * 4);
-  const sorted = nearby
-    .map(n => ({ id: n.id, d: dist(coord, n.coord) }))
-    .sort((a,b) => a.d-b.d);
+function attachPoint(coord, nodes, edges, idx, SRAD, idStr) {
+  edges[idStr]=[];
+  const allSorted=nodes
+    .map(n=>({id:n.id,d:dist(coord,n.coord)}))
+    .sort((a,b)=>a.d-b.d);
 
-  let connected = 0;
+  let connected=0;
 
-  // Tahap 1: normal
-  for (const n of sorted.slice(0, 80)) {
-    if (n.d > SEARCH_RAD * 4) break;
-    if (canSee(coord, nodes[n.id].coord)) {
+  // Tahap 1: radius normal
+  const near=getNearbyNodes(coord,idx,SRAD,SRAD*5);
+  const s1=near.map(n=>({id:n.id,d:dist(coord,n.coord)})).sort((a,b)=>a.d-b.d);
+  for(const n of s1.slice(0,100)){
+    if(n.d>SRAD*5) break;
+    if(canSee(coord,nodes[n.id].coord)){
       edges[idStr].push(n.id);
-      if (!edges[n.id].includes(idStr)) edges[n.id].push(idStr);
+      if(!edges[n.id].includes(idStr)) edges[n.id].push(idStr);
       connected++;
     }
   }
 
-  // Tahap 2: perlebar 2x lipat
-  if (connected === 0) {
-    const wider = getNearbyNodes(coord, spatialIndex, SEARCH_RAD, SEARCH_RAD * 10);
-    const sorted2 = wider.map(n=>({id:n.id,d:dist(coord,n.coord)})).sort((a,b)=>a.d-b.d);
-    for (const n of sorted2.slice(0, 120)) {
-      if (n.d > 3.0) break;
-      if (canSee(coord, nodes[n.id].coord)) {
+  // Tahap 2: radius lebih lebar
+  if(connected===0){
+    for(const n of allSorted.slice(0,150)){
+      if(n.d>4.0) break;
+      if(canSee(coord,nodes[n.id].coord)){
         edges[idStr].push(n.id);
-        if (!edges[n.id].includes(idStr)) edges[n.id].push(idStr);
+        if(!edges[n.id].includes(idStr)) edges[n.id].push(idStr);
         connected++;
       }
     }
   }
 
-  // Tahap 3: fallback paksa 3 terdekat
-  if (connected === 0) {
+  // Tahap 3: fallback paksa
+  if(connected===0){
     console.warn(`[${idStr}] fallback paksa`);
-    sorted.slice(0, 3).forEach(n => {
+    allSorted.slice(0,5).forEach(n=>{
       edges[idStr].push(n.id);
-      if (!edges[n.id].includes(idStr)) edges[n.id].push(idStr);
+      if(!edges[n.id].includes(idStr)) edges[n.id].push(idStr);
     });
   }
 }
 
 // ============================================================
-// A* — pakai min-heap sederhana agar tidak O(n) per iterasi
+// A* dengan binary min-heap — O(log n) per operasi
 // ============================================================
-function astar(sId, eId, edges, getCoord) {
-  // Min-heap sederhana dengan array + sort per chunk
-  const open = new Map(); // id -> fScore
-  open.set(sId, 0);
-  const cameFrom = {};
-  const gScore = { [sId]: 0 };
-  let iter = 0;
-
-  while (open.size > 0 && iter++ < MAX_ITER) {
-    // Ambil node dengan fScore terkecil
-    let curr = null, best = Infinity;
-    for (const [id, f] of open) {
-      if (f < best) { best = f; curr = id; }
+class MinHeap {
+  constructor(){ this.h=[]; }
+  push(item){ this.h.push(item); this._up(this.h.length-1); }
+  pop(){
+    const top=this.h[0];
+    const last=this.h.pop();
+    if(this.h.length){ this.h[0]=last; this._down(0); }
+    return top;
+  }
+  _up(i){
+    while(i>0){
+      const p=(i-1)>>1;
+      if(this.h[p][0]<=this.h[i][0]) break;
+      [this.h[p],this.h[i]]=[this.h[i],this.h[p]]; i=p;
     }
-    open.delete(curr);
+  }
+  _down(i){
+    const n=this.h.length;
+    while(true){
+      let s=i,l=2*i+1,r=2*i+2;
+      if(l<n&&this.h[l][0]<this.h[s][0]) s=l;
+      if(r<n&&this.h[r][0]<this.h[s][0]) s=r;
+      if(s===i) break;
+      [this.h[s],this.h[i]]=[this.h[i],this.h[s]]; i=s;
+    }
+  }
+  get size(){ return this.h.length; }
+}
 
-    if (curr === eId) {
-      const path = [curr];
-      while (cameFrom[curr]) { curr = cameFrom[curr]; path.push(curr); }
+function astar(sId, eId, edges, getCoord) {
+  const heap=new MinHeap();
+  heap.push([0,sId]);
+  const cameFrom={};
+  const gScore={[sId]:0};
+  const visited=new Set();
+  let iter=0;
+
+  while(heap.size>0&&iter++<MAX_ITER){
+    const [,curr]=heap.pop();
+    if(visited.has(curr)) continue;
+    visited.add(curr);
+
+    if(curr===eId){
+      const path=[curr]; let c=curr;
+      while(cameFrom[c]){c=cameFrom[c];path.push(c);}
       return path.reverse();
     }
 
-    for (const next of (edges[curr] || [])) {
-      const g = (gScore[curr] ?? Infinity) + dist(getCoord(curr), getCoord(next));
-      if (g < (gScore[next] ?? Infinity)) {
-        cameFrom[next] = curr;
-        gScore[next] = g;
-        open.set(next, g + dist(getCoord(next), getCoord(eId)));
+    for(const next of (edges[curr]||[])){
+      if(visited.has(next)) continue;
+      const g=(gScore[curr]??Infinity)+dist(getCoord(curr),getCoord(next));
+      if(g<(gScore[next]??Infinity)){
+        cameFrom[next]=curr;
+        gScore[next]=g;
+        heap.push([g+dist(getCoord(next),getCoord(eId)),next]);
       }
     }
   }
@@ -317,140 +355,127 @@ function astar(sId, eId, edges, getCoord) {
 // MAIN ROUTING
 // ============================================================
 async function runRoute() {
-  if (!start || !end) { alert("Pilih Start dan End terlebih dahulu!"); return; }
-  if (isRouting) { alert("Routing sedang berjalan, tunggu sebentar."); return; }
-  isRouting = true;
+  if(!start||!end){alert("Pilih Start dan End!"); return;}
+  if(isRouting){alert("Routing sedang berjalan..."); return;}
+  isRouting=true;
+
+  const GRID=stepVal();
+  const SRAD=Math.max(GRID*2.8, 0.08);
 
   showProgress(0);
-  updateStatus("Membangun grid lokal...", "#e67e22");
+  updateStatus("Membangun grid adaptive...","#e67e22");
   await sleep(20);
 
-  // 1. Grid dinamis
-  const nodes = buildLocalGrid(start, end);
-  if (nodes.length === 0) {
-    updateStatus("Tidak ada area laut ❌", "red");
-    isRouting = false; hideProgress(); return;
+  const nodes=buildAdaptiveGrid(start,end);
+  if(nodes.length===0){
+    updateStatus("Tidak ada area laut ❌","red");
+    isRouting=false; hideProgress(); return;
   }
 
-  setInfo(`Grid: ${nodes.length} node`);
-  updateStatus("Menghubungkan node...", "#e67e22");
+  setInfo(`Grid: ${nodes.length} node (step=${GRID}°)`);
+  updateStatus("Menghubungkan node...","#e67e22");
   await sleep(10);
 
-  // 2. Build edges dengan spatial index (tidak freeze)
-  const edges = await buildEdgesAsync(nodes, pct => {
-    showProgress(pct * 0.8);
-    updateStatus(`Koneksi: ${Math.round(pct*100)}%`, "#e67e22");
+  const edges=await buildEdgesAsync(nodes,SRAD,pct=>{
+    showProgress(pct*0.8);
+    updateStatus(`Koneksi: ${Math.round(pct*100)}%`,"#e67e22");
   });
 
   showProgress(0.85);
-  updateStatus("Menyambung titik ke grid...", "#e67e22");
+  updateStatus("Menyambung titik ke grid...","#e67e22");
   await sleep(10);
 
-  // 3. Spatial index untuk attachPoint
-  const spatialIndex = buildSpatialIndex(nodes, SEARCH_RAD);
-  const sId = "S", eId = "E";
-  attachPoint(start, nodes, edges, spatialIndex, sId);
-  attachPoint(end,   nodes, edges, spatialIndex, eId);
+  const idx=buildSpatialIndex(nodes,SRAD);
+  const sId="S", eId="E";
+  attachPoint(start,nodes,edges,idx,SRAD,sId);
+  attachPoint(end,  nodes,edges,idx,SRAD,eId);
 
   showProgress(0.9);
-  updateStatus("Menghitung rute A*...", "#e67e22");
+  updateStatus("Menghitung rute A*...","#e67e22");
   await sleep(10);
 
-  // 4. A*
-  const getCoord = id => id===sId ? start : id===eId ? end : nodes[id].coord;
-  const path = astar(sId, eId, edges, getCoord);
+  const getCoord=id=>id===sId?start:id===eId?end:nodes[id].coord;
+  const path=astar(sId,eId,edges,getCoord);
 
   showProgress(1.0);
 
-  if (path.length > 0) {
-    if (routeLine) map.removeLayer(routeLine);
-    const coords = path.map(id => getCoord(id));
-    routeLine = L.polyline(coords, { color:'#2980b9', weight:5, opacity:0.9 }).addTo(map);
-    map.fitBounds(routeLine.getBounds(), { padding:[40,40] });
-
-    let totalDeg = 0;
-    for (let i=1; i<coords.length; i++) totalDeg += dist(coords[i-1], coords[i]);
-    const km = Math.round(totalDeg * 111);
-    const nm = Math.round(totalDeg * 60);
-    updateStatus(`Rute berhasil ✅ (~${km} km / ${nm} nm)`, "#27ae60");
-    setInfo(`${path.length} waypoint · ${nodes.length} node grid`);
+  if(path.length>0){
+    if(routeLine) map.removeLayer(routeLine);
+    const coords=path.map(id=>getCoord(id));
+    routeLine=L.polyline(coords,{color:'#2980b9',weight:5,opacity:0.9}).addTo(map);
+    map.fitBounds(routeLine.getBounds(),{padding:[40,40]});
+    let deg=0;
+    for(let i=1;i<coords.length;i++) deg+=dist(coords[i-1],coords[i]);
+    const km=Math.round(deg*111), nm=Math.round(deg*60);
+    updateStatus(`Rute berhasil ✅ (~${km} km / ${nm} nm)`,"#27ae60");
+    setInfo(`${path.length} waypoint · ${nodes.length} node · step=${GRID}°`);
   } else {
-    updateStatus("Gagal: tidak ada jalur ❌", "red");
-    setInfo("Coba perbesar GRID_STEP atau periksa islands.json");
+    updateStatus("Gagal: tidak ada jalur ❌","red");
+    setInfo("Kecilkan Grid Step atau tambah level Selat Sempit");
     alert(
       "Rute tidak ditemukan.\n\n" +
-      "Kemungkinan:\n" +
-      "• Jalur laut benar-benar terblokir daratan\n" +
-      "• islands.json menutup selat yang dilalui\n" +
-      "• Coba GRID_STEP: 0.025 untuk selat sempit"
+      "Coba:\n" +
+      "• Geser Grid Step ke kiri (lebih kecil)\n" +
+      "• Naikkan level Selat Sempit\n" +
+      "• Pastikan islands.json tidak menutup selat\n" +
+      "• Klik titik lebih ke tengah laut"
     );
   }
 
-  await sleep(500);
-  hideProgress();
-  isRouting = false;
+  await sleep(300); hideProgress();
+  isRouting=false;
 }
 
 // ============================================================
 // UI HELPERS
 // ============================================================
-function clearAll() {
-  if (isRouting) return;
-  if (routeLine)    { map.removeLayer(routeLine);    routeLine = null; }
-  if (startMarker)  { map.removeLayer(startMarker);  startMarker = null; }
-  if (endMarker)    { map.removeLayer(endMarker);    endMarker = null; }
-  start = null; end = null; mode = null;
-  updateStatus("Reset — pilih titik baru", "#888");
-  setInfo("Mendukung seluruh Indonesia.");
+function clearAll(){
+  if(isRouting) return;
+  if(routeLine){map.removeLayer(routeLine);routeLine=null;}
+  if(startMarker){map.removeLayer(startMarker);startMarker=null;}
+  if(endMarker){map.removeLayer(endMarker);endMarker=null;}
+  start=null;end=null;mode=null;
+  updateStatus("Reset — pilih titik baru","#888");
+  setInfo("Grid adaptive — area titik lebih rapat untuk selat sempit.");
 }
-
-function setMode(m) {
-  if (isRouting) return;
-  mode = m;
+function setMode(m){
+  if(isRouting) return;
+  mode=m;
   updateStatus(`Klik titik ${m==='start'?'Start':'End'} di laut...`);
 }
-
-function updateStatus(txt, col) {
-  const s = document.getElementById('status');
-  s.innerText = txt;
-  s.style.color = col || '#e67e22';
+function updateStatus(txt,col){
+  const s=document.getElementById('status');
+  s.innerText=txt; s.style.color=col||'#e67e22';
 }
-
-function setInfo(txt) {
-  document.getElementById('infoBox').innerText = txt;
+function setInfo(txt){ document.getElementById('infoBox').innerText=txt; }
+function showProgress(pct){
+  document.getElementById('progressBar').style.display='block';
+  document.getElementById('progressFill').style.width=Math.round(pct*100)+'%';
 }
+function hideProgress(){ document.getElementById('progressBar').style.display='none'; }
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 
-function showProgress(pct) {
-  const bar = document.getElementById('progressBar');
-  const fill = document.getElementById('progressFill');
-  bar.style.display = 'block';
-  fill.style.width = Math.round(pct*100) + '%';
-}
-
-function hideProgress() {
-  document.getElementById('progressBar').style.display = 'none';
-}
-
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-map.on('click', e => {
-  if (!mode || isRouting) return;
-  const p = [e.latlng.lat, e.latlng.lng];
-  if (islands.length > 0 && isBlocked(p)) { alert("Itu daratan!"); return; }
-
-  const icon = txt => L.divIcon({ html: txt, iconSize:[28,28], className:'', iconAnchor:[14,14] });
-
-  if (mode === 'start') {
-    start = p;
-    if (startMarker) map.removeLayer(startMarker);
-    startMarker = L.marker(p, { icon: icon('📍') }).addTo(map).bindPopup("Start");
+map.on('click',e=>{
+  if(!mode||isRouting) return;
+  const p=[e.latlng.lat,e.latlng.lng];
+  if(islands.length>0&&isBlocked(p)){alert("Itu daratan!"); return;}
+  const icon=txt=>L.divIcon({html:txt,iconSize:[28,28],className:'',iconAnchor:[14,14]});
+  if(mode==='start'){
+    start=p;
+    if(startMarker) map.removeLayer(startMarker);
+    startMarker=L.marker(p,{icon:icon('📍')}).addTo(map).bindPopup("Start");
   } else {
-    end = p;
-    if (endMarker) map.removeLayer(endMarker);
-    endMarker = L.marker(p, { icon: icon('🏁') }).addTo(map).bindPopup("End");
+    end=p;
+    if(endMarker) map.removeLayer(endMarker);
+    endMarker=L.marker(p,{icon:icon('🏁')}).addTo(map).bindPopup("End");
   }
-  mode = null;
+  mode=null;
   updateStatus("Siap — klik 🚀 Cari Rute");
+});
+
+window.addEventListener('load',()=>{
+  document.getElementById('valStep').innerText=stepVal()+'°';
+  document.getElementById('valFine').innerText=fineVal()+'×';
 });
 </script>
 </body>
