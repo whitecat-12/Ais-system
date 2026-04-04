@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Routing Kapal PRO (Smart Gap + Smooth)</title>
+  <title>Routing Kapal FAST (Anti Lag + Smart)</title>
   <meta charset="utf-8" />
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -42,8 +42,6 @@
 
 <script>
 // ==========================
-// MAP
-// ==========================
 var map = L.map('map').setView([-7,110],6);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
@@ -55,8 +53,6 @@ let end = null;
 let startMarker, endMarker, routeLine;
 
 // ==========================
-// LOAD ISLAND
-// ==========================
 fetch('islands.json')
 .then(res => res.json())
 .then(data => {
@@ -64,7 +60,6 @@ fetch('islands.json')
 
   islands.forEach(island => {
     island.polygon.push(island.polygon[0]);
-
     L.polygon(island.polygon,{color:'red'}).addTo(map);
   });
 });
@@ -72,7 +67,6 @@ fetch('islands.json')
 // ==========================
 function setMode(m){ mode = m; }
 
-// ==========================
 map.on('click', function(e){
   let p = [e.latlng.lat, e.latlng.lng];
 
@@ -89,8 +83,6 @@ map.on('click', function(e){
   }
 });
 
-// ==========================
-// POINT IN POLYGON
 // ==========================
 function pointInPolygon(point, vs){
   let x = point[0], y = point[1];
@@ -109,9 +101,6 @@ function pointInPolygon(point, vs){
   return inside;
 }
 
-// ==========================
-// TOLERANCE (BIAR BISA DEKAT PULAU)
-// ==========================
 function isBlocked(point){
   for(let island of islands){
     if(pointInPolygon(point, island.polygon)){
@@ -122,55 +111,44 @@ function isBlocked(point){
 }
 
 // ==========================
-// GRID (LEBIH HALUS)
+// LEBIH RINGAN
 // ==========================
-let step = 0.08;
+let step = 0.12;
 
 function toKey(p){
-  return p[0].toFixed(3)+","+p[1].toFixed(3);
+  return p[0].toFixed(2)+","+p[1].toFixed(2);
 }
 
-// ==========================
-// 16 DIRECTION (LEBIH FLEXIBLE)
-// ==========================
 function neighbors(p){
-  let d = [];
-
-  for(let dx=-1; dx<=1; dx+=0.5){
-    for(let dy=-1; dy<=1; dy+=0.5){
-      if(dx===0 && dy===0) continue;
-      d.push([dx*step, dy*step]);
-    }
-  }
-
-  return d.map(v=>[p[0]+v[0], p[1]+v[1]]);
+  return [
+    [p[0]+step,p[1]],
+    [p[0]-step,p[1]],
+    [p[0],p[1]+step],
+    [p[0],p[1]-step],
+    [p[0]+step,p[1]+step],
+    [p[0]-step,p[1]-step],
+    [p[0]+step,p[1]-step],
+    [p[0]-step,p[1]+step],
+  ];
 }
 
-// ==========================
 function dist(a,b){
   return Math.hypot(a[0]-b[0], a[1]-b[1]);
 }
 
 // ==========================
-// LINE OF SIGHT (ANTI MUTER 🔥)
+// A* TANPA SORT BERAT
 // ==========================
-function canSee(a,b){
-  let steps = 20;
-
-  for(let i=0;i<=steps;i++){
-    let t = i/steps;
-    let lat = a[0] + (b[0]-a[0])*t;
-    let lng = a[1] + (b[1]-a[1])*t;
-
-    if(isBlocked([lat,lng])) return false;
+function getBest(open, f){
+  let best = 0;
+  for(let i=1;i<open.length;i++){
+    if(f[toKey(open[i])] < f[toKey(open[best])]){
+      best = i;
+    }
   }
-
-  return true;
+  return open.splice(best,1)[0];
 }
 
-// ==========================
-// A*
-// ==========================
 function astar(start,end){
 
   let open=[start];
@@ -182,8 +160,7 @@ function astar(start,end){
 
   while(open.length){
 
-    open.sort((a,b)=>f[toKey(a)]-f[toKey(b)]);
-    let cur = open.shift();
+    let cur = getBest(open,f);
 
     if(dist(cur,end) < step){
       return reconstruct(cameFrom,cur);
@@ -212,8 +189,22 @@ function astar(start,end){
 }
 
 // ==========================
-// RECONSTRUCT + SHORTCUT 🔥
+// SHORTCUT RINGAN
 // ==========================
+function canSee(a,b){
+  let steps = 10;
+
+  for(let i=0;i<=steps;i++){
+    let t = i/steps;
+    let lat = a[0] + (b[0]-a[0])*t;
+    let lng = a[1] + (b[1]-a[1])*t;
+
+    if(isBlocked([lat,lng])) return false;
+  }
+
+  return true;
+}
+
 function reconstruct(cameFrom,cur){
   let path=[cur];
 
@@ -224,40 +215,18 @@ function reconstruct(cameFrom,cur){
 
   path = path.reverse();
 
-  // shortcut biar nggak muter
-  let smooth = [path[0]];
-
+  let result = [path[0]];
   let i = 0;
+
   while(i < path.length-1){
     let j = path.length-1;
 
     for(; j>i; j--){
       if(canSee(path[i], path[j])){
-        smooth.push(path[j]);
+        result.push(path[j]);
         i = j;
         break;
       }
-    }
-  }
-
-  return smooth;
-}
-
-// ==========================
-// SMOOTH FINAL
-// ==========================
-function smoothPath(path){
-  let result = [];
-
-  for(let i=0; i<path.length-1; i++){
-    let p0 = path[i];
-    let p1 = path[i+1];
-
-    for(let t=0; t<=1; t+=0.05){
-      result.push([
-        p0[0] + (p1[0]-p0[0])*t,
-        p0[1] + (p1[1]-p0[1])*t
-      ]);
     }
   }
 
@@ -265,10 +234,31 @@ function smoothPath(path){
 }
 
 // ==========================
+// SMOOTH RINGAN
+// ==========================
+function smoothPath(path){
+  let out = [];
+
+  for(let i=0;i<path.length-1;i++){
+    let a = path[i];
+    let b = path[i+1];
+
+    for(let t=0;t<=1;t+=0.2){
+      out.push([
+        a[0] + (b[0]-a[0])*t,
+        a[1] + (b[1]-a[1])*t
+      ]);
+    }
+  }
+
+  return out;
+}
+
+// ==========================
 function runRoute(){
 
   if(!start || !end){
-    alert("Pilih start & end dulu!");
+    alert("Pilih titik dulu!");
     return;
   }
 
