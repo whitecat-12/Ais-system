@@ -1,30 +1,43 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Routing Kapal (Anti-Lag Version)</title>
+  <title>Routing Kapal (Fast & Smart)</title>
   <meta charset="utf-8" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
-    body { margin: 0; padding: 0; font-family: sans-serif; }
+    body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
     #map { height: 100vh; width: 100vw; }
     .panel {
       position: absolute; top: 15px; left: 50px;
-      background: rgba(255, 255, 255, 0.9); padding: 15px;
-      border-radius: 8px; z-index: 1000; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      background: rgba(255, 255, 255, 0.95); padding: 15px;
+      border-radius: 12px; z-index: 1000; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      width: 220px;
     }
-    button { padding: 8px 12px; cursor: pointer; border: 1px solid #ccc; background: white; border-radius: 4px; font-weight: bold; }
+    button { 
+      width: 100%; margin-bottom: 8px; padding: 10px; 
+      cursor: pointer; border: 1px solid #ddd; background: white; 
+      border-radius: 6px; font-weight: bold; transition: 0.3s;
+    }
     button:hover { background: #f0f0f0; }
-    .info { margin-top: 10px; font-size: 12px; color: #d32f2f; font-weight: bold; }
+    .btn-run { background: #2ecc71; color: white; border: none; }
+    .btn-run:hover { background: #27ae60; }
+    .status-box { 
+      margin-top: 10px; padding: 8px; border-radius: 4px;
+      font-size: 12px; background: #eee; text-align: center;
+    }
+    #status { color: #e67e22; font-weight: bold; }
   </style>
 </head>
 <body>
 
 <div class="panel">
-  <strong>Kontrol Rute:</strong><br><br>
-  <button onclick="setMode('start')">1. Klik Start</button>
-  <button onclick="setMode('end')">2. Klik End</button>
-  <button onclick="runRoute()" style="background: #4CAF50; color: white; border: none;">3. Cari Rute</button>
-  <div class="info" id="status">Status: Menunggu data...</div>
+  <strong>Navigasi Kapal</strong><br><br>
+  <button onclick="setMode('start')">📍 Set Start</button>
+  <button onclick="setMode('end')">🏁 Set End</button>
+  <button class="btn-run" onclick="runRoute()">🚀 Cari Rute</button>
+  <div class="status-box">
+    Status: <span id="status">Loading data...</span>
+  </div>
 </div>
 
 <div id="map"></div>
@@ -32,49 +45,39 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-// --- KONFIGURASI AMAN ---
-const GRID_STEP = 0.012;      // Seimbang antara akurasi selat dan beban CPU
-const K_NEAREST = 20;         // Dikurangi sedikit agar beban connectGraph lebih ringan
-const COLLISION_MARGIN = 0.001; 
+// --- KONFIGURASI HIGH PERFORMANCE ---
+const GRID_STEP = 0.018;   // Keseimbangan terbaik antara kecepatan & ketelitian selat
+const K_NEAREST = 15;      // Jumlah koneksi optimal
+const SEARCH_RADIUS = 0.04; // Radius maksimal pencarian tetangga (kunci kecepatan)
 
 var map = L.map('map').setView([-8.4, 115.1], 9);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let islands = [];
-let nodes = [];
-let edges = {};
-let start = null, end = null;
-let mode = null;
+let islands = [], nodes = [], edges = {};
+let start = null, end = null, mode = null;
 let routeLine, startMarker, endMarker;
 
-// --- 1. LOAD DATA ---
+// --- 1. INITIALIZATION ---
 fetch('islands.json')
   .then(res => res.json())
-  .then(data => {
+  .then(async data => {
     islands = data.islands;
     islands.forEach(isl => {
       if (isl.polygon[0] !== isl.polygon[isl.polygon.length - 1]) isl.polygon.push(isl.polygon[0]);
-      L.polygon(isl.polygon, {color: 'red', weight: 1, fillOpacity: 0.1, interactive: false}).addTo(map);
+      L.polygon(isl.polygon, {color: '#c0392b', weight: 1, fillOpacity: 0.1, interactive: false}).addTo(map);
     });
     
-    // Gunakan fase-fase agar tidak hang
-    initSystem();
-  });
-
-async function initSystem() {
-    updateStatus("Membangun Node...");
-    await sleep(100);
+    updateStatus("Memetakan laut...");
+    await sleep(50);
     generateNodes();
     
-    updateStatus("Menghubungkan Jaringan (Mohon Tunggu)...");
-    await sleep(100);
+    updateStatus("Menghubungkan...");
     await connectGraphAsync();
     
-    updateStatus("Sistem Siap!");
-    document.getElementById('status').style.color = "green";
-}
+    updateStatus("Siap digunakan", "#27ae60");
+  });
 
-// --- 2. GEOMETRY ---
+// --- 2. GEOMETRY ENGINE (FAST) ---
 function pointInPolygon(p, vs) {
   let x = p[0], y = p[1], inside = false;
   for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
@@ -85,14 +88,16 @@ function pointInPolygon(p, vs) {
 }
 
 function isBlocked(p) {
-  for (let isl of islands) { if (pointInPolygon(p, isl.polygon)) return true; }
+  for (let i = 0; i < islands.length; i++) {
+    if (pointInPolygon(p, islands[i].polygon)) return true;
+  }
   return false;
 }
 
 function canSee(a, b) {
   let d = dist(a, b);
-  let steps = Math.max(8, Math.ceil(d / 0.008)); 
-  for (let i = 0; i <= steps; i++) {
+  let steps = Math.max(6, Math.ceil(d / 0.01)); 
+  for (let i = 1; i < steps; i++) {
     let t = i / steps;
     let p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
     if (isBlocked(p)) return false;
@@ -102,9 +107,10 @@ function canSee(a, b) {
 
 function dist(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
 
-// --- 3. ASYNC GENERATION ---
+// --- 3. GRAPH ENGINE ---
 function generateNodes() {
-  for (let lat = -9.2; lat < -7.8; lat += GRID_STEP) {
+  // Fokus hanya pada area sekitar Bali & Selat
+  for (let lat = -9.1; lat < -7.9; lat += GRID_STEP) {
     for (let lng = 114.2; lng < 115.8; lng += GRID_STEP) {
       let p = [lat, lng];
       if (!isBlocked(p)) nodes.push({ id: nodes.length, coord: p });
@@ -112,15 +118,20 @@ function generateNodes() {
   }
 }
 
-// Rahasia agar tidak Unresponsive: pecah loop besar jadi chunk kecil
 async function connectGraphAsync() {
-  const chunkSize = 100; // Proses 100 node, lalu istirahat sebentar
   for (let i = 0; i < nodes.length; i++) {
     let a = nodes[i];
     edges[a.id] = [];
     
-    let neighbors = nodes
-      .filter(b => b.id !== a.id && dist(a.coord, b.coord) < GRID_STEP * 4) // Filter jarak dulu agar cepat
+    // Filter cepat berdasarkan jarak absolut sebelum hitung hypot & canSee
+    let candidates = nodes.filter(b => {
+      if (a.id === b.id) return false;
+      let dLat = Math.abs(a.coord[0] - b.coord[0]);
+      let dLng = Math.abs(a.coord[1] - b.coord[1]);
+      return dLat < SEARCH_RADIUS && dLng < SEARCH_RADIUS;
+    });
+
+    let neighbors = candidates
       .map(b => ({ id: b.id, d: dist(a.coord, b.coord) }))
       .sort((x, y) => x.d - y.d)
       .slice(0, K_NEAREST);
@@ -129,72 +140,25 @@ async function connectGraphAsync() {
       if (canSee(a.coord, nodes[n.id].coord)) edges[a.id].push(n.id);
     });
 
-    if (i % chunkSize === 0) {
-      updateStatus(`Menghubungkan: ${Math.round((i/nodes.length)*100)}%`);
-      await sleep(1); // Kasih nafas ke browser
+    if (i % 200 === 0) {
+      updateStatus(`${Math.round((i/nodes.length)*100)}%...`);
+      await sleep(1);
     }
   }
 }
 
-// --- 4. ALGORITMA A* ---
-function astar(startNode, endNode) {
-  let open = [startNode.id], cameFrom = {}, gScore = {}, fScore = {};
-  gScore[startNode.id] = 0;
-  fScore[startNode.id] = dist(startNode.coord, endNode.coord);
-
-  while (open.length > 0) {
-    let currentId = open.reduce((a, b) => fScore[a] < fScore[b] ? a : b);
-    if (currentId === endNode.id) return reconstructPath(cameFrom, currentId);
-    open = open.filter(id => id !== currentId);
-
-    for (let neighborId of (edges[currentId] || [])) {
-      let tentativeG = gScore[currentId] + dist(nodes[currentId].coord, nodes[neighborId].coord);
-      if (gScore[neighborId] === undefined || tentativeG < gScore[neighborId]) {
-        cameFrom[neighborId] = currentId;
-        gScore[neighborId] = tentativeG;
-        fScore[neighborId] = tentativeG + dist(nodes[neighborId].coord, endNode.coord);
-        if (!open.includes(neighborId)) open.push(neighborId);
-      }
-    }
-  }
-  return [];
-}
-
-function reconstructPath(cameFrom, current) {
-  let path = [current];
-  while (cameFrom[current] !== undefined) { current = cameFrom[current]; path.push(current); }
-  return path.reverse().map(id => nodes[id].coord);
-}
-
-// --- 5. UI ---
-function setMode(m) { mode = m; }
-function updateStatus(txt) { document.getElementById('status').innerText = "Status: " + txt; }
-function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-
-map.on('click', e => {
-  let p = [e.latlng.lat, e.latlng.lng];
-  if (isBlocked(p)) return;
-  if (mode === 'start') {
-    start = p;
-    if (startMarker) map.removeLayer(startMarker);
-    startMarker = L.marker(p).addTo(map).bindPopup("Start").openPopup();
-  } else if (mode === 'end') {
-    end = p;
-    if (endMarker) map.removeLayer(endMarker);
-    endMarker = L.marker(p).addTo(map).bindPopup("End").openPopup();
-  }
-});
-
+// --- 4. NAVIGATION (A*) ---
 function runRoute() {
-  if (!start || !end) return;
-  updateStatus("Mencari rute...");
+  if (!start || !end) { alert("Pilih Start dan End dulu!"); return; }
+  updateStatus("Menghitung rute...", "#2980b9");
 
+  // Temporary connection for Start & End
   let sNode = { id: nodes.length, coord: start };
   let eNode = { id: nodes.length + 1, coord: end };
   
   [sNode, eNode].forEach(tmp => {
     edges[tmp.id] = [];
-    nodes.filter(n => dist(tmp.coord, n.coord) < 0.25)
+    nodes.filter(n => dist(tmp.coord, n.coord) < 0.3)
          .forEach(n => {
            if (canSee(tmp.coord, n.coord)) {
              edges[tmp.id].push(n.id);
@@ -207,13 +171,71 @@ function runRoute() {
   let path = astar(sNode, eNode);
   if (path.length > 0) {
     if (routeLine) map.removeLayer(routeLine);
-    routeLine = L.polyline(path, {color: '#0066ff', weight: 5}).addTo(map);
+    routeLine = L.polyline(path, {color: '#2ecc71', weight: 6, opacity: 0.8, lineJoin: 'round'}).addTo(map);
     map.fitBounds(routeLine.getBounds());
-    updateStatus("Selesai!");
+    updateStatus("Rute ditemukan", "#27ae60");
   } else {
-    alert("Rute tidak terjangkau!");
+    updateStatus("Rute buntu", "#c0392b");
+    alert("Kapal tidak bisa lewat. Coba pindahkan titik ke laut yang lebih terbuka.");
   }
 }
+
+function astar(startNode, endNode) {
+  let open = [startNode.id], cameFrom = {}, gScore = {}, fScore = {};
+  gScore[startNode.id] = 0;
+  fScore[startNode.id] = dist(startNode.coord, endNode.coord);
+
+  while (open.length > 0) {
+    let currentId = open.reduce((a, b) => fScore[a] < fScore[b] ? a : b);
+    if (currentId === endNode.id) {
+      let p = [currentId];
+      while (cameFrom[currentId] !== undefined) {
+        currentId = cameFrom[currentId];
+        p.push(currentId);
+      }
+      return p.reverse().map(id => id >= nodes.length ? (id === nodes.length ? startNode.coord : endNode.coord) : nodes[id].coord);
+    }
+    open = open.filter(id => id !== currentId);
+
+    (edges[currentId] || []).forEach(neighborId => {
+      let d = dist(currentId >= nodes.length ? (currentId === nodes.length ? startNode.coord : endNode.coord) : nodes[currentId].coord, 
+                   neighborId >= nodes.length ? (neighborId === nodes.length ? startNode.coord : endNode.coord) : nodes[neighborId].coord);
+      let tentativeG = gScore[currentId] + d;
+      if (gScore[neighborId] === undefined || tentativeG < gScore[neighborId]) {
+        cameFrom[neighborId] = currentId;
+        gScore[neighborId] = tentativeG;
+        fScore[neighborId] = tentativeG + dist(neighborId >= nodes.length ? (neighborId === nodes.length ? startNode.coord : endNode.coord) : nodes[neighborId].coord, endNode.coord);
+        if (!open.includes(neighborId)) open.push(neighborId);
+      }
+    });
+  }
+  return [];
+}
+
+// --- 5. HELPER ---
+function setMode(m) { mode = m; updateStatus("Klik pada peta..."); }
+function updateStatus(txt, color) { 
+  const el = document.getElementById('status');
+  el.innerText = txt; 
+  if(color) el.style.color = color;
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+map.on('click', e => {
+  let p = [e.latlng.lat, e.latlng.lng];
+  if (isBlocked(p)) { alert("Itu daratan!"); return; }
+  if (mode === 'start') {
+    start = p;
+    if (startMarker) map.removeLayer(startMarker);
+    startMarker = L.marker(p).addTo(map);
+  } else if (mode === 'end') {
+    end = p;
+    if (endMarker) map.removeLayer(endMarker);
+    endMarker = L.marker(p).addTo(map);
+  }
+  mode = null;
+  updateStatus("Siap");
+});
 </script>
 </body>
 </html>
