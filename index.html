@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Routing Kapal (Optimized - Smart Path)</title>
+  <title>Routing Kapal (Optimized - Selat Bali Fix)</title>
   <meta charset="utf-8" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
@@ -23,9 +23,10 @@
       border: 1px solid #ccc;
       background: white;
       border-radius: 4px;
+      font-weight: bold;
     }
     button:hover { background: #f0f0f0; }
-    .info { margin-top: 10px; font-size: 12px; color: #666; }
+    .info { margin-top: 10px; font-size: 12px; color: #333; font-weight: 500; }
   </style>
 </head>
 <body>
@@ -35,7 +36,7 @@
   <button onclick="setMode('start')">1. Klik Start</button>
   <button onclick="setMode('end')">2. Klik End</button>
   <button onclick="runRoute()" style="background: #4CAF50; color: white; border: none;">3. Cari Rute</button>
-  <div class="info" id="status">Status: Tunggu data pulau...</div>
+  <div class="info" id="status">Status: Menunggu data...</div>
 </div>
 
 <div id="map"></div>
@@ -43,10 +44,10 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-// --- KONFIGURASI ---
-const GRID_STEP = 0.05; // Lebih kecil = lebih akurat di selat sempit (Saran: 0.03 - 0.08)
-const K_NEAREST = 15;   // Jumlah koneksi antar node (Saran: 10 - 20)
-const COLLISION_MARGIN = 0.005; // Jarak aman dari pantai
+// --- KONFIGURASI OPTIMASI SELAT ---
+const GRID_STEP = 0.008;      // Cukup rapat untuk selat sempit (Bali-Jawa)
+const K_NEAREST = 25;       // Koneksi lebih banyak agar rute lebih fleksibel
+const COLLISION_MARGIN = 0.001; 
 
 var map = L.map('map').setView([-8.4, 115.1], 9);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
@@ -64,14 +65,13 @@ fetch('islands.json')
   .then(data => {
     islands = data.islands;
     islands.forEach(isl => {
-      // Pastikan poligon tertutup
       if (isl.polygon[0] !== isl.polygon[isl.polygon.length - 1]) {
         isl.polygon.push(isl.polygon[0]);
       }
-      L.polygon(isl.polygon, {color: 'red', weight: 1, fillOpacity: 0.2}).addTo(map);
+      L.polygon(isl.polygon, {color: 'red', weight: 1, fillOpacity: 0.15, interactive: false}).addTo(map);
     });
 
-    document.getElementById('status').innerText = "Status: Menghitung Node...";
+    document.getElementById('status').innerText = "Status: Memetakan Selat...";
     setTimeout(() => {
       generateNodes();
       connectGraph();
@@ -98,11 +98,10 @@ function isBlocked(p) {
   return false;
 }
 
-// Deteksi tabrakan garis yang lebih presisi
 function canSee(a, b) {
   let d = dist(a, b);
-  // Cek setiap 0.01 derajat (~1km) di sepanjang garis
-  let steps = Math.max(10, Math.ceil(d / 0.01)); 
+  // Pengecekan tabrakan lebih rapat (per 0.002 derajat) agar tidak tembus daratan tipis
+  let steps = Math.max(10, Math.ceil(d / 0.002)); 
   for (let i = 0; i <= steps; i++) {
     let t = i / steps;
     let p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
@@ -117,9 +116,12 @@ function dist(a, b) {
 
 // --- 3. GRAPH GENERATION ---
 function generateNodes() {
-  // Area Bali dan sekitarnya
-  for (let lat = -9.0; lat < -7.9; lat += GRID_STEP) {
-    for (let lng = 114.4; lng < 115.8; lng += GRID_STEP) {
+  // Area difokuskan agar tidak memproses seluruh dunia
+  const latMin = -9.0, latMax = -7.9;
+  const lngMin = 114.3, lngMax = 115.8;
+
+  for (let lat = latMin; lat < latMax; lat += GRID_STEP) {
+    for (let lng = lngMin; lng < lngMax; lng += GRID_STEP) {
       let p = [lat, lng];
       if (!isBlocked(p)) {
         nodes.push({ id: nodes.length, coord: p });
@@ -132,7 +134,7 @@ function connectGraph() {
   nodes.forEach(a => {
     edges[a.id] = [];
     let neighbors = nodes
-      .filter(b => b.id !== a.id)
+      .filter(b => b.id !== a.id && dist(a.coord, b.coord) < GRID_STEP * 5) // Batasi radius pencarian
       .map(b => ({ id: b.id, d: dist(a.coord, b.coord) }))
       .sort((x, y) => x.d - y.d)
       .slice(0, K_NEAREST);
@@ -207,17 +209,17 @@ map.on('click', e => {
 
 function runRoute() {
   if (!start || !end) { alert("Tentukan Start dan End dulu!"); return; }
+  document.getElementById('status').innerText = "Status: Mencari rute terbaik...";
 
-  // Hubungkan titik start/end sementara ke graph
   let sNode = { id: nodes.length, coord: start };
   let eNode = { id: nodes.length + 1, coord: end };
   
-  // Daftarkan sementara ke edges
   nodes.push(sNode, eNode);
   [sNode, eNode].forEach(tmp => {
     edges[tmp.id] = [];
     nodes.forEach(n => {
-      if (n.id !== tmp.id && dist(tmp.coord, n.coord) < 0.5 && canSee(tmp.coord, n.coord)) {
+      // Radius koneksi titik klik diperlebar agar pasti nyambung ke grid
+      if (n.id !== tmp.id && dist(tmp.coord, n.coord) < 0.1 && canSee(tmp.coord, n.coord)) {
         edges[tmp.id].push(n.id);
         edges[n.id].push(tmp.id);
       }
@@ -228,10 +230,12 @@ function runRoute() {
 
   if (path.length > 0) {
     if (routeLine) map.removeLayer(routeLine);
-    routeLine = L.polyline(path, {color: 'blue', weight: 5, opacity: 0.7}).addTo(map);
+    routeLine = L.polyline(path, {color: '#007bff', weight: 6, opacity: 0.8}).addTo(map);
     map.fitBounds(routeLine.getBounds());
+    document.getElementById('status').innerText = "Status: Rute ditemukan!";
   } else {
-    alert("Maaf, rute tidak ditemukan. Coba dekatkan titik ke laut terbuka.");
+    document.getElementById('status').innerText = "Status: Gagal menemukan rute.";
+    alert("Rute tidak ditemukan. Coba pindahkan titik sedikit lebih ke tengah laut.");
   }
 }
 </script>
