@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Routing Kapal (FIX CELAH SEMPIT)</title>
+  <title>Routing Kapal (FULL FIX - SMART)</title>
   <meta charset="utf-8" />
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -77,10 +77,9 @@ function pointInPolygon(p, vs){
   return inside;
 }
 
-// 🔥 FIX: collision lebih toleran
+// 🔥 collision lebih fleksibel
 function isBlocked(p){
-
-  let margin = 0.01; // kecil = bisa masuk celah
+  let margin = 0.01;
 
   for(let isl of islands){
 
@@ -88,25 +87,21 @@ function isBlocked(p){
 
     for(let dx=-margin; dx<=margin; dx+=margin){
       for(let dy=-margin; dy<=margin; dy+=margin){
-
         let np=[p[0]+dx,p[1]+dy];
-
         if(pointInPolygon(np, isl.polygon)){
           return true;
         }
       }
     }
   }
-
   return false;
 }
 
 // ==========================
-// LINE CHECK (lebih longgar)
+// LINE OF SIGHT
 // ==========================
 function canSee(a,b){
-
-  let steps=10; // 🔥 lebih longgar biar celah kebaca
+  let steps=10;
 
   for(let i=0;i<=steps;i++){
     let t=i/steps;
@@ -121,11 +116,11 @@ function canSee(a,b){
 }
 
 // ==========================
-// NODE LEBIH RAPAT 🔥
+// NODE GENERATION
 // ==========================
 function generateNodes(){
 
-  let step=0.2; // 🔥 sebelumnya 0.5 (terlalu jarang)
+  let step=0.2;
 
   for(let lat=-10; lat<0; lat+=step){
     for(let lng=105; lng<120; lng+=step){
@@ -145,11 +140,11 @@ function generateNodes(){
 }
 
 // ==========================
-// CONNECT GRAPH (KNN UPGRADE)
+// GRAPH CONNECT (KNN)
 // ==========================
 function connectGraph(){
 
-  let K = 8; // 🔥 lebih fleksibel dari 5
+  let K = 8;
 
   nodes.forEach(a=>{
     edges[a.id] = [];
@@ -179,7 +174,7 @@ function connectGraph(){
     });
   });
 
-  console.log("Graph siap (celah OK)");
+  console.log("Graph siap");
 }
 
 // ==========================
@@ -188,10 +183,29 @@ function dist(a,b){
 }
 
 // ==========================
-function nearestNode(p){
-  return nodes.reduce((a,b)=>
-    dist(p,a.coord)<dist(p,b.coord)?a:b
-  );
+// 🔥 TEMP NODE CONNECTOR
+// ==========================
+function connectTemporaryNode(p){
+
+  let tempId = nodes.length;
+
+  nodes.push({ id: tempId, coord: p });
+  edges[tempId] = [];
+
+  nodes.forEach(n=>{
+    if(n.id === tempId) return;
+
+    if(dist(p, n.coord) < 1.5){
+      if(canSee(p, n.coord)){
+        edges[tempId].push(n.id);
+
+        if(!edges[n.id]) edges[n.id]=[];
+        edges[n.id].push(tempId);
+      }
+    }
+  });
+
+  return tempId;
 }
 
 // ==========================
@@ -226,7 +240,8 @@ function astar(startNode,endNode){
         came[nb]=current;
         g[nb]=temp;
 
-        f[nb]=temp + dist(nodes[nb].coord,endNode.coord)*1.1;
+        // 🔥 heuristic NORMAL (tidak maksa lurus)
+        f[nb]=temp + dist(nodes[nb].coord,endNode.coord);
 
         if(!open.includes(nb)) open.push(nb);
       }
@@ -267,6 +282,8 @@ function smooth(path){
 }
 
 // ==========================
+// RUN ROUTE
+// ==========================
 function runRoute(){
 
   if(!start||!end){
@@ -274,13 +291,34 @@ function runRoute(){
     return;
   }
 
-  let s=nearestNode(start);
-  let e=nearestNode(end);
+  // 🔥 shortcut langsung
+  if(canSee(start, end)){
+    let path = smooth([start,end]);
 
-  let path=astar(s,e);
+    if(routeLine) map.removeLayer(routeLine);
 
-  path.unshift(start);
-  path.push(end);
+    routeLine=L.polyline(path,{
+      color:'blue',
+      weight:4
+    }).addTo(map);
+
+    map.fitBounds(routeLine.getBounds());
+    return;
+  }
+
+  // 🔥 connect ke graph
+  let sId = connectTemporaryNode(start);
+  let eId = connectTemporaryNode(end);
+
+  let path=astar(
+    {id:sId, coord:start},
+    {id:eId, coord:end}
+  );
+
+  if(path.length === 0){
+    alert("Rute tidak ditemukan!");
+    return;
+  }
 
   path=smooth(path);
 
