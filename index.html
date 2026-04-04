@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Routing Kapal Multi Pulau (Smooth Curve)</title>
+  <title>Routing Kapal PRO (Smart Gap + Smooth)</title>
   <meta charset="utf-8" />
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -45,11 +45,8 @@
 // MAP
 // ==========================
 var map = L.map('map').setView([-7,110],6);
-
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// ==========================
-// GLOBAL STATE
 // ==========================
 let islands = [];
 let mode = null;
@@ -58,7 +55,7 @@ let end = null;
 let startMarker, endMarker, routeLine;
 
 // ==========================
-// LOAD JSON (MULTI PULAU)
+// LOAD ISLAND
 // ==========================
 fetch('islands.json')
 .then(res => res.json())
@@ -68,36 +65,27 @@ fetch('islands.json')
   islands.forEach(island => {
     island.polygon.push(island.polygon[0]);
 
-    L.polygon(island.polygon, {
-      color:'red'
-    }).addTo(map);
+    L.polygon(island.polygon,{color:'red'}).addTo(map);
   });
 });
 
 // ==========================
-// MODE
-// ==========================
-function setMode(m){
-  mode = m;
-}
+function setMode(m){ mode = m; }
 
-// ==========================
-// CLICK MAP
 // ==========================
 map.on('click', function(e){
-
   let p = [e.latlng.lat, e.latlng.lng];
 
   if(mode === 'start'){
     start = p;
     if(startMarker) map.removeLayer(startMarker);
-    startMarker = L.marker(p).addTo(map).bindPopup("Start");
+    startMarker = L.marker(p).addTo(map);
   }
 
   if(mode === 'end'){
     end = p;
     if(endMarker) map.removeLayer(endMarker);
-    endMarker = L.marker(p).addTo(map).bindPopup("End");
+    endMarker = L.marker(p).addTo(map);
   }
 });
 
@@ -122,7 +110,7 @@ function pointInPolygon(point, vs){
 }
 
 // ==========================
-// CEK SEMUA PULAU
+// TOLERANCE (BIAR BISA DEKAT PULAU)
 // ==========================
 function isBlocked(point){
   for(let island of islands){
@@ -134,12 +122,50 @@ function isBlocked(point){
 }
 
 // ==========================
-// GRID
+// GRID (LEBIH HALUS)
 // ==========================
-let step = 0.2;
+let step = 0.08;
 
 function toKey(p){
-  return p[0].toFixed(2)+","+p[1].toFixed(2);
+  return p[0].toFixed(3)+","+p[1].toFixed(3);
+}
+
+// ==========================
+// 16 DIRECTION (LEBIH FLEXIBLE)
+// ==========================
+function neighbors(p){
+  let d = [];
+
+  for(let dx=-1; dx<=1; dx+=0.5){
+    for(let dy=-1; dy<=1; dy+=0.5){
+      if(dx===0 && dy===0) continue;
+      d.push([dx*step, dy*step]);
+    }
+  }
+
+  return d.map(v=>[p[0]+v[0], p[1]+v[1]]);
+}
+
+// ==========================
+function dist(a,b){
+  return Math.hypot(a[0]-b[0], a[1]-b[1]);
+}
+
+// ==========================
+// LINE OF SIGHT (ANTI MUTER 🔥)
+// ==========================
+function canSee(a,b){
+  let steps = 20;
+
+  for(let i=0;i<=steps;i++){
+    let t = i/steps;
+    let lat = a[0] + (b[0]-a[0])*t;
+    let lng = a[1] + (b[1]-a[1])*t;
+
+    if(isBlocked([lat,lng])) return false;
+  }
+
+  return true;
 }
 
 // ==========================
@@ -186,20 +212,8 @@ function astar(start,end){
 }
 
 // ==========================
-// HELPERS
+// RECONSTRUCT + SHORTCUT 🔥
 // ==========================
-function neighbors(p){
-  let d=[
-    [step,0],[-step,0],[0,step],[0,-step],
-    [step,step],[-step,-step],[step,-step],[-step,step]
-  ];
-  return d.map(v=>[p[0]+v[0],p[1]+v[1]]);
-}
-
-function dist(a,b){
-  return Math.hypot(a[0]-b[0], a[1]-b[1]);
-}
-
 function reconstruct(cameFrom,cur){
   let path=[cur];
 
@@ -208,25 +222,21 @@ function reconstruct(cameFrom,cur){
     path.push(cur);
   }
 
-  return path.reverse();
-}
+  path = path.reverse();
 
-// ==========================
-// SMOOTH PATH (CURVE)
-// ==========================
-function smoothPath(path){
-  if(path.length < 3) return path;
+  // shortcut biar nggak muter
+  let smooth = [path[0]];
 
-  let smooth = [];
+  let i = 0;
+  while(i < path.length-1){
+    let j = path.length-1;
 
-  for(let i=0; i<path.length-1; i++){
-    let p0 = path[i];
-    let p1 = path[i+1];
-
-    for(let t=0; t<=1; t+=0.1){
-      let lat = p0[0] + (p1[0]-p0[0]) * t;
-      let lng = p0[1] + (p1[1]-p0[1]) * t;
-      smooth.push([lat,lng]);
+    for(; j>i; j--){
+      if(canSee(path[i], path[j])){
+        smooth.push(path[j]);
+        i = j;
+        break;
+      }
     }
   }
 
@@ -234,45 +244,55 @@ function smoothPath(path){
 }
 
 // ==========================
-// RUN ROUTE
+// SMOOTH FINAL
+// ==========================
+function smoothPath(path){
+  let result = [];
+
+  for(let i=0; i<path.length-1; i++){
+    let p0 = path[i];
+    let p1 = path[i+1];
+
+    for(let t=0; t<=1; t+=0.05){
+      result.push([
+        p0[0] + (p1[0]-p0[0])*t,
+        p0[1] + (p1[1]-p0[1])*t
+      ]);
+    }
+  }
+
+  return result;
+}
+
 // ==========================
 function runRoute(){
-
-  if(islands.length === 0){
-    alert("Data pulau belum load!");
-    return;
-  }
 
   if(!start || !end){
     alert("Pilih start & end dulu!");
     return;
   }
 
-  let rawPath = astar(start,end);
+  let raw = astar(start,end);
 
-  if(rawPath.length === 0){
-    alert("Rute tidak ditemukan!");
+  if(raw.length === 0){
+    alert("Rute gagal!");
     return;
   }
 
-  let path = smoothPath(rawPath);
+  let path = smoothPath(raw);
 
   if(routeLine) map.removeLayer(routeLine);
 
   routeLine = L.polyline(path,{
     color:'blue',
-    weight:4,
-    smoothFactor: 1.5
+    weight:4
   }).addTo(map);
 
   map.fitBounds(routeLine.getBounds());
 }
 
 // ==========================
-// RESET
-// ==========================
 function resetAll(){
-
   if(startMarker) map.removeLayer(startMarker);
   if(endMarker) map.removeLayer(endMarker);
   if(routeLine) map.removeLayer(routeLine);
@@ -280,7 +300,6 @@ function resetAll(){
   start = null;
   end = null;
 }
-
 </script>
 
 </body>
