@@ -28,5 +28,37 @@
       "type": "chokepoint",
       "description": "Perairan timur Selat Madura menuju Gresik"
     }
+    {
+  "waypoints": [
+    {
+      "lat": -7.8511,
+      "lng": 114.5299,
+      "name": "Selat Bali - Utara (Dekat Banyuwangi)",
+      "type": "chokepoint",
+      "description": "Pintu utara Selat Bali, dekat Pelabuhan Ketapang Banyuwangi"
+    },
+    {
+      "lat": -8.0496,
+      "lng": 114.4695,
+      "name": "Selat Bali - Tengah Barat",
+      "type": "fairway",
+      "description": "Jalur utama Selat Bali, arus kuat"
+    },
+    {
+      "lat": -8.1584,
+      "lng": 114.4124,
+      "name": "Selat Bali - Selatan (Dekat Gilimanuk)",
+      "type": "port_approach",
+      "description": "Pendekatan ke Pelabuhan Gilimanuk, Bali"
+    },
+    {
+      "lat": -8.3594,
+      "lng": 114.4447,
+      "name": "Selat Bali - Selatan Timur (Dekat Pelabuhan Banyuwangi Baru)",
+      "type": "chokepoint",
+      "description": "Perairan selatan menuju Pelabuhan Banyuwangi Baru"
+    }
+  ]
+}
   ]
 }
