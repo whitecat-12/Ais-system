@@ -1,0 +1,28 @@
+{
+  "waypoints": [
+    {
+      "lat": -7.1608,
+      "lng": 112.6848,
+      "name": "Selat Madura - Pintu Barat",
+      "type": "chokepoint"
+    },
+    {
+      "lat": -7.1245,
+      "lng": 112.7563,
+      "name": "Selat Madura - Tengah",
+      "type": "fairway"
+    },
+    {
+      "lat": -7.0912,
+      "lng": 112.8237,
+      "name": "Selat Madura - Pintu Timur",
+      "type": "chokepoint"
+    },
+    {
+      "lat": -7.2089,
+      "lng": 112.7351,
+      "name": "Dekat Pelabuhan Tanjung Perak",
+      "type": "port_approach"
+    }
+  ]
+}
