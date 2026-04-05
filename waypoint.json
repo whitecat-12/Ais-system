@@ -1,28 +1,32 @@
 {
   "waypoints": [
     {
-      "lat": -7.1608,
-      "lng": 112.6848,
-      "name": "Selat Madura - Pintu Barat",
-      "type": "chokepoint"
+      "lat": -6.9872,
+      "lng": 112.6683,
+      "name": "Selat Madura - Utara (Dekat Madura)",
+      "type": "chokepoint",
+      "description": "Perairan utara Selat Madura, sisi Pulau Madura"
     },
     {
-      "lat": -7.1245,
-      "lng": 112.7563,
-      "name": "Selat Madura - Tengah",
-      "type": "fairway"
+      "lat": -7.0914,
+      "lng": 112.6649,
+      "name": "Selat Madura - Tengah Barat",
+      "type": "fairway",
+      "description": "Jalur utama Selat Madura bagian barat"
     },
     {
-      "lat": -7.0912,
-      "lng": 112.8237,
-      "name": "Selat Madura - Pintu Timur",
-      "type": "chokepoint"
+      "lat": -7.1752,
+      "lng": 112.6938,
+      "name": "Selat Madura - Selatan (Dekat Surabaya)",
+      "type": "port_approach",
+      "description": "Pendekatan ke Pelabuhan Tanjung Perak"
     },
     {
-      "lat": -7.2089,
-      "lng": 112.7351,
-      "name": "Dekat Pelabuhan Tanjung Perak",
-      "type": "port_approach"
+      "lat": -7.1929,
+      "lng": 112.8037,
+      "name": "Selat Madura - Timur (Dekat Gresik)",
+      "type": "chokepoint",
+      "description": "Perairan timur Selat Madura menuju Gresik"
     }
   ]
 }
