@@ -27,9 +27,7 @@
       "name": "Selat Madura - Timur (Dekat Gresik)",
       "type": "chokepoint",
       "description": "Perairan timur Selat Madura menuju Gresik"
-    }
-    {
-  "waypoints": [
+    },
     {
       "lat": -7.8511,
       "lng": 114.5299,
