@@ -181,8 +181,11 @@ fetch('waypoint.json')
   .then(r => r.json())
   .then(data => {
     waypoints = (data.waypoints || data || []).filter(w => w.lat && w.lng);
-
-    // Tampilkan marker waypoint
+    
+    // HAPUS TAMPILAN WAYPOINT: TIDAK MENAMPILKAN MARKER WAYPOINT LAGI
+    // Marker waypoint dihapus sesuai permintaan "hapus tampilan waypoint"
+    // Kode berikut ini di-comment agar waypoint tidak muncul di peta
+    /*
     for (let i = 0; i < waypoints.length; i++) {
       const wp = waypoints[i];
       L.circleMarker([wp.lat, wp.lng], {
@@ -190,8 +193,9 @@ fetch('waypoint.json')
         fillColor: '#f9ca24', fillOpacity: 0.9
       }).bindTooltip(wp.name || `WP${i}`, { permanent: false, direction: 'top' }).addTo(map);
     }
+    */
 
-    setStatus(`📍 ${waypoints.length} waypoint dimuat`, "#2980b9");
+    setStatus(`📍 ${waypoints.length} waypoint dimuat (tidak ditampilkan)`, "#2980b9");
     tryBuildGraph();
   })
   .catch(() => {
@@ -242,25 +246,26 @@ function buildWaypointGraph() {
 
   wpReady = true;
 
-  // Debug: gambar edge graph (opsional, bisa di-comment)
+  // Debug: gambar edge graph (opsional, bisa di-comment) - TIDAK DIGAMBAR AGAR TIDAK MENGACAUKAN TAMPILAN
   // drawGraph();
 
-  setStatus(`✅ Graf siap · ${waypoints.length} WP`, "#27ae60");
-  setInfo(`Siap routing. Graf: ${waypoints.length} waypoint terhubung.`);
+  setStatus(`✅ Graf siap · ${waypoints.length} WP (tersembunyi)`, "#27ae60");
+  setInfo(`Siap routing. Graf: ${waypoints.length} waypoint internal siap digunakan.`);
 }
 
-// (Debug) gambar semua edge
+// (Debug) gambar semua edge - DINONAKTIFKAN AGAR TIDAK MENGACAUKAN
 function drawGraph() {
-  for (let i = 0; i < waypoints.length; i++) {
-    for (const j of (wpGraph[i] || [])) {
-      if (j > i) {
-        L.polyline(
-          [[waypoints[i].lat, waypoints[i].lng],[waypoints[j].lat, waypoints[j].lng]],
-          { color: '#bdc3c7', weight: 0.8, opacity: 0.5 }
-        ).addTo(map);
-      }
-    }
-  }
+  // Fungsi dikosongkan karena tidak diperlukan tampilan waypoint/edge
+  // for (let i = 0; i < waypoints.length; i++) {
+  //   for (const j of (wpGraph[i] || [])) {
+  //     if (j > i) {
+  //       L.polyline(
+  //         [[waypoints[i].lat, waypoints[i].lng],[waypoints[j].lat, waypoints[j].lng]],
+  //         { color: '#bdc3c7', weight: 0.8, opacity: 0.5 }
+  //       ).addTo(map);
+  //     }
+  //   }
+  // }
 }
 
 // ═══════════════════════════════════════════════
@@ -437,7 +442,7 @@ async function runRoute() {
   const wpCount = pathIds.filter(id => id !== 'S' && id !== 'E').length;
 
   setStatus(`✅ ${totalKm.toFixed(1)} km · ${nm} nm`, "#27ae60");
-  setInfo(`🎯 Rute via ${wpCount} waypoint · ${coords.length} titik jalur`);
+  setInfo(`🎯 Rute via ${wpCount} waypoint (tidak ditampilkan) · ${coords.length} titik jalur`);
 
   showProgress(1); setTimeout(hideProgress, 600);
   isRouting = false;
