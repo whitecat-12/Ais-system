@@ -1,106 +1,188 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Marine Router Indonesia</title>
+  <title>Marine Router Indonesia - Dengan Input Koordinat</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+    body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; background: #f0f2f5; }
     #map { height: 100vh; width: 100vw; }
 
+    /* Panel utama lebih lebar untuk input koordinat */
     .panel {
       position: absolute; top: 15px; left: 15px;
       background: rgba(255,255,255,0.97);
-      padding: 14px 16px;
-      border-radius: 18px;
+      padding: 14px 18px;
+      border-radius: 20px;
       z-index: 1000;
-      box-shadow: 0 6px 24px rgba(0,0,0,0.13);
-      width: 250px;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.15);
+      width: 300px;
       font-size: 13px;
+      backdrop-filter: blur(2px);
+      border: 1px solid rgba(0,0,0,0.05);
     }
-    .title { font-size: 15px; font-weight: 700; color: #1a1a2e; margin-bottom: 2px; }
-    .sub   { font-size: 10px; color: #888; margin-bottom: 10px; }
+    .title { font-size: 16px; font-weight: 800; color: #0a2b3e; margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
+    .sub   { font-size: 10px; color: #5d6e7e; margin-bottom: 12px; border-left: 2px solid #2c7da0; padding-left: 8px; }
 
-    .btn-row { display: flex; gap: 6px; margin-bottom: 8px; }
+    /* Koordinat input group */
+    .coord-group {
+      background: #f8fafc;
+      border-radius: 16px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      border: 1px solid #e2edf2;
+    }
+    .coord-title {
+      font-weight: 700;
+      font-size: 12px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #1f5068;
+    }
+    .coord-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .coord-row input {
+      flex: 1;
+      padding: 8px 10px;
+      border-radius: 30px;
+      border: 1px solid #cbd5e1;
+      background: white;
+      font-size: 12px;
+      font-family: monospace;
+      transition: 0.2s;
+    }
+    .coord-row input:focus {
+      border-color: #2c7da0;
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(44,125,160,0.2);
+    }
+    .btn-sm {
+      background: #eef2f5;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 30px;
+      font-weight: 600;
+      font-size: 11px;
+      cursor: pointer;
+      transition: 0.1s;
+    }
+    .btn-sm:active { transform: scale(0.96); }
+    .btn-primary { background: #2c7da0; color: white; }
+    .btn-primary:hover { background: #1f5e7a; }
+
+    .btn-row { display: flex; gap: 8px; margin-bottom: 12px; }
     button {
       flex: 1; padding: 8px 6px; cursor: pointer; border: none;
-      border-radius: 30px; font-weight: 600; font-size: 11px;
-      transition: all 0.18s; white-space: nowrap;
+      border-radius: 40px; font-weight: 700; font-size: 11px;
+      transition: all 0.18s;
     }
-    button:active { transform: scale(0.97); }
-    .b-start { background: #3498db; color: #fff; }
-    .b-end   { background: #9b59b6; color: #fff; }
-    .b-run   { background: #2ecc71; color: #fff; width: 100%; padding: 9px; font-size: 13px; margin-bottom: 8px; }
-    .b-clear { background: #f1f2f6; color: #555; width: 100%; font-size: 11px; margin-bottom: 0; }
+    .b-start { background: #2c7da0; color: #fff; }
+    .b-end   { background: #8e6c8f; color: #fff; }
+    .b-run   { background: #2ecc71; color: #fff; width: 100%; padding: 10px; font-size: 13px; margin-bottom: 8px; }
+    .b-clear { background: #e9ecef; color: #2c3e50; width: 100%; font-size: 11px; }
 
-    .status-wrap { background: #f8f9fa; border-radius: 30px; padding: 6px 10px; margin: 8px 0; font-size: 11px; text-align: center; }
+    .status-wrap { background: #f1f5f9; border-radius: 30px; padding: 8px 12px; margin: 10px 0; font-size: 12px; text-align: center; }
     #status { font-weight: 700; color: #e67e22; }
 
-    #progressBar { width:100%; height:3px; background:#eee; border-radius:3px; margin:6px 0; display:none; }
-    #progressFill { height:100%; background:#2ecc71; border-radius:3px; width:0%; transition:width 0.2s; }
+    #progressBar { width:100%; height:4px; background:#e2e8f0; border-radius:4px; margin:6px 0; display:none; }
+    #progressFill { height:100%; background:#2ecc71; border-radius:4px; width:0%; }
 
-    .info { font-size: 10px; color: #666; background: #fef9e6; border-radius: 10px; padding: 6px 9px; line-height: 1.5; }
-
-    .sep { border: none; border-top: 1px solid #eee; margin: 8px 0; }
+    .info { font-size: 11px; color: #2c3e50; background: #eef4ff; border-radius: 14px; padding: 8px 10px; line-height: 1.45; margin-top: 8px; border-left: 3px solid #2c7da0; }
+    .sep { border: none; border-top: 1px solid #dce5ec; margin: 10px 0; }
+    .hint { font-size: 9px; color: #6c868e; margin-top: 5px; text-align: center; }
   </style>
 </head>
 <body>
 <div class="panel">
-  <div class="title">🚢 Marine Router</div>
-  <div class="sub">Waypoint-First · Ringan · Cepat</div>
+  <div class="title">
+    <span>🚢</span> Marine Router Indonesia
+  </div>
+  <div class="sub">Waypoint Graph · Jalur Laut Aman</div>
+
+  <!-- INPUT KOORDINAT START -->
+  <div class="coord-group">
+    <div class="coord-title">📍 START (LAT, LON)</div>
+    <div class="coord-row">
+      <input type="text" id="startLat" placeholder="Latitude (-8.650)" value="-6.2088">
+      <input type="text" id="startLng" placeholder="Longitude (106.845)" value="106.8456">
+    </div>
+    <div style="display: flex; gap: 8px; justify-content: flex-end;">
+      <button class="btn-sm" id="applyStartBtn">📍 Terapkan Start</button>
+      <button class="btn-sm" id="pickStartMapBtn" style="background:#e0e7ff;">🗺️ Pilih di Peta</button>
+    </div>
+  </div>
+
+  <!-- INPUT KOORDINAT FINISH -->
+  <div class="coord-group">
+    <div class="coord-title">🏁 FINISH (LAT, LON)</div>
+    <div class="coord-row">
+      <input type="text" id="endLat" placeholder="Latitude (-7.257)" value="-7.2575">
+      <input type="text" id="endLng" placeholder="Longitude (112.752)" value="112.7521">
+    </div>
+    <div style="display: flex; gap: 8px; justify-content: flex-end;">
+      <button class="btn-sm" id="applyEndBtn">🏁 Terapkan Finish</button>
+      <button class="btn-sm" id="pickEndMapBtn" style="background:#e0e7ff;">🗺️ Pilih di Peta</button>
+    </div>
+  </div>
 
   <div class="btn-row">
-    <button class="b-start" onclick="setMode('start')">📍 Start</button>
-    <button class="b-end"   onclick="setMode('end')">🏁 Tujuan</button>
+    <button class="b-start" onclick="setMode('start')">📍 Start (Pilih Peta)</button>
+    <button class="b-end"   onclick="setMode('end')">🏁 Finish (Pilih Peta)</button>
   </div>
-  <button class="b-run"   onclick="runRoute()">⚡ Cari Rute</button>
-  <button class="b-clear" onclick="clearAll()">🗑️ Reset</button>
+  <button class="b-run"   onclick="runRoute()">⚡ HITUNG RUTE MARITIM</button>
+  <button class="b-clear" onclick="clearAll()">🗑️ Reset Semua & Hapus Rute</button>
 
-  <div class="status-wrap">📡 <span id="status">Memuat data...</span></div>
+  <div class="status-wrap">📡 <span id="status">Memuat data & waypoint...</span></div>
   <div id="progressBar"><div id="progressFill"></div></div>
-  <div class="info" id="infoBox">Pilih titik Start & Tujuan di laut, lalu cari rute.</div>
+  <div class="info" id="infoBox">✅ Gunakan input koordinat atau klik tombol pilih di peta.<br>Start & Finish otomatis ditandai.</div>
+  <div class="hint">💡 Rute menggunakan ribuan waypoint (tidak tampil) & hindari daratan</div>
 </div>
 
 <div id="map"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-// ═══════════════════════════════════════════════
-// KONSTANTA
-// ═══════════════════════════════════════════════
-const WP_CONNECT_RADIUS = 3.0;   // °  — radius hubungkan WP ke WP terdekat
-const WP_K_NEAR         = 8;     // maks tetangga per waypoint
+// ═══════════════════════════════════════════════════════════════
+// KONSTANTA & GLOBAL STATE
+// ═══════════════════════════════════════════════════════════════
+const WP_CONNECT_RADIUS = 3.0;   // derajat
+const WP_K_NEAR         = 8;
 const MAX_ITER          = 200000;
 
-// ═══════════════════════════════════════════════
-// STATE
-// ═══════════════════════════════════════════════
 let islands   = [];
-let waypoints = [];   // [{lat, lng, name?}, ...]
-let wpGraph   = {};   // id -> [id, ...]  (dibangun sekali setelah load)
+let waypoints = [];       // {lat, lng, name?}
+let wpGraph   = {};
 let wpReady   = false;
+let islandsReady = false;
 
-let start = null, end = null, mode = null;
+let start = null;        // [lat, lng]
+let end   = null;
+let mode  = null;        // 'start' atau 'end' untuk mode klik peta
 let routeLine, startMarker, endMarker;
 let isRouting = false;
 
-// ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // MAP
-// ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 const map = L.map('map', { zoomControl: true }).setView([-2.5, 118], 5);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; OSM &amp; CartoDB', subdomains: 'abcd', maxZoom: 19
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> & CartoDB',
+  subdomains: 'abcd', maxZoom: 19
 }).addTo(map);
 
-// ═══════════════════════════════════════════════
-// GEOMETRY HELPERS
-// ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// FUNGSI GEOMETRI & DETEKSI DARATAN
+// ═══════════════════════════════════════════════════════════════
 function dist(a, b) {
   return Math.hypot(a[0] - b[0], a[1] - b[1]);
 }
 
-// Haversine km — untuk tampilan jarak
 function distKm(a, b) {
   const R = 6371;
   const dLat = (b[0]-a[0]) * Math.PI/180;
@@ -120,8 +202,8 @@ function pointInPolygon(p, vs) {
   return inside;
 }
 
-// Cek titik di daratan
 function isBlocked(lat, lng) {
+  if (!islands.length) return false;
   for (const isl of islands) {
     if (!isl.bbox) continue;
     if (lat < isl.bbox.minLat || lat > isl.bbox.maxLat) continue;
@@ -131,9 +213,7 @@ function isBlocked(lat, lng) {
   return false;
 }
 
-// LOS — cek apakah garis lurus tidak melalui daratan
-// Untuk rute antar waypoint laut, sampling cukup 20 titik
-function canSee(a, b, samples = 20) {
+function canSee(a, b, samples = 24) {
   for (let i = 1; i < samples; i++) {
     const t = i / samples;
     const lat = a[0] + (b[0]-a[0])*t;
@@ -143,11 +223,9 @@ function canSee(a, b, samples = 20) {
   return true;
 }
 
-// ═══════════════════════════════════════════════
-// LOAD DATA
-// ═══════════════════════════════════════════════
-let islandsReady = false;
-
+// ═══════════════════════════════════════════════════════════════
+// LOAD DATA (islands.json + waypoint.json)
+// ═══════════════════════════════════════════════════════════════
 fetch('islands.json')
   .then(r => r.json())
   .then(data => {
@@ -163,124 +241,87 @@ fetch('islands.json')
         minLng: Math.min(...lngs)-0.02, maxLng: Math.max(...lngs)+0.02
       };
       L.polygon(isl.polygon, {
-        color:'#c0392b', weight:1, fillOpacity:0.15,
+        color:'#c0392b', weight:1.2, fillOpacity:0.15,
         fillColor:'#e74c3c', interactive:false
       }).addTo(map);
     }
     islandsReady = true;
     tryBuildGraph();
-    setStatus("✅ Pulau dimuat", "#27ae60");
+    setStatus("✅ Pulau & batasan dimuat", "#27ae60");
   })
   .catch(() => {
     islandsReady = true;
     tryBuildGraph();
-    setStatus("⚠️ islands.json gagal — tanpa penghalang daratan", "#e67e22");
+    setStatus("⚠️ islands.json gagal -> routing tanpa daratan", "#e67e22");
+    setInfo("⚠️ islands.json tidak ditemukan, asumsi semua laut bebas.");
   });
 
 fetch('waypoint.json')
   .then(r => r.json())
   .then(data => {
     waypoints = (data.waypoints || data || []).filter(w => w.lat && w.lng);
-    
-    // HAPUS TAMPILAN WAYPOINT: TIDAK MENAMPILKAN MARKER WAYPOINT LAGI
-    // Marker waypoint dihapus sesuai permintaan "hapus tampilan waypoint"
-    // Kode berikut ini di-comment agar waypoint tidak muncul di peta
-    /*
-    for (let i = 0; i < waypoints.length; i++) {
-      const wp = waypoints[i];
-      L.circleMarker([wp.lat, wp.lng], {
-        radius: 3.5, color: '#f39c12', weight: 1.5,
-        fillColor: '#f9ca24', fillOpacity: 0.9
-      }).bindTooltip(wp.name || `WP${i}`, { permanent: false, direction: 'top' }).addTo(map);
-    }
-    */
-
-    setStatus(`📍 ${waypoints.length} waypoint dimuat (tidak ditampilkan)`, "#2980b9");
+    // WAYPOINT TIDAK DITAMPILKAN (Marker waypoint dihapus sesuai permintaan)
+    setStatus(`📍 ${waypoints.length} waypoint dimuat (tersembunyi)`, "#2980b9");
     tryBuildGraph();
   })
   .catch(() => {
-    setStatus("⚠️ waypoint.json gagal", "#e74c3c");
+    setStatus("⚠️ waypoint.json gagal, rute tidak dapat dihitung", "#e74c3c");
+    wpReady = false;
   });
 
-// ═══════════════════════════════════════════════
-// BUILD WAYPOINT GRAPH (sekali saja)
-// ═══════════════════════════════════════════════
-let graphBuilt = false;
-
 function tryBuildGraph() {
-  if (!islandsReady || waypoints.length === 0 || graphBuilt) return;
-  graphBuilt = true;
+  if (!islandsReady || waypoints.length === 0 || wpGraph && Object.keys(wpGraph).length > 0) return;
   buildWaypointGraph();
 }
 
 function buildWaypointGraph() {
-  setStatus("🔗 Membangun graf waypoint...", "#e67e22");
+  setStatus("🔗 Membangun graf waypoint maritim...", "#e67e22");
   wpGraph = {};
-
   for (let i = 0; i < waypoints.length; i++) {
     wpGraph[i] = [];
-
-    // Cari K tetangga terdekat
     const dists = [];
     for (let j = 0; j < waypoints.length; j++) {
       if (i === j) continue;
-      const d = dist(
-        [waypoints[i].lat, waypoints[i].lng],
-        [waypoints[j].lat, waypoints[j].lng]
-      );
+      const d = dist([waypoints[i].lat, waypoints[i].lng], [waypoints[j].lat, waypoints[j].lng]);
       if (d <= WP_CONNECT_RADIUS) dists.push({ j, d });
     }
     dists.sort((a,b) => a.d - b.d);
-
     for (const { j } of dists.slice(0, WP_K_NEAR)) {
       const a = [waypoints[i].lat, waypoints[i].lng];
       const b = [waypoints[j].lat, waypoints[j].lng];
-      // Jika islands sudah ada, cek LOS; jika belum, asumsikan bisa
-      if (!islands.length || canSee(a, b)) {
+      if (!islands.length || canSee(a, b, 18)) {
         if (!wpGraph[i].includes(j)) wpGraph[i].push(j);
         if (!wpGraph[j]) wpGraph[j] = [];
         if (!wpGraph[j].includes(i)) wpGraph[j].push(i);
       }
     }
   }
-
   wpReady = true;
-
-  // Debug: gambar edge graph (opsional, bisa di-comment) - TIDAK DIGAMBAR AGAR TIDAK MENGACAUKAN TAMPILAN
-  // drawGraph();
-
-  setStatus(`✅ Graf siap · ${waypoints.length} WP (tersembunyi)`, "#27ae60");
-  setInfo(`Siap routing. Graf: ${waypoints.length} waypoint internal siap digunakan.`);
+  setStatus(`✅ Graf siap · ${waypoints.length} WP internal`, "#27ae60");
+  setInfo(`Graf terbentuk: ${waypoints.length} titik waypoint (tersembunyi). Siap routing.`);
 }
 
-// (Debug) gambar semua edge - DINONAKTIFKAN AGAR TIDAK MENGACAUKAN
-function drawGraph() {
-  // Fungsi dikosongkan karena tidak diperlukan tampilan waypoint/edge
-  // for (let i = 0; i < waypoints.length; i++) {
-  //   for (const j of (wpGraph[i] || [])) {
-  //     if (j > i) {
-  //       L.polyline(
-  //         [[waypoints[i].lat, waypoints[i].lng],[waypoints[j].lat, waypoints[j].lng]],
-  //         { color: '#bdc3c7', weight: 0.8, opacity: 0.5 }
-  //       ).addTo(map);
-  //     }
-  //   }
-  // }
-}
-
-// ═══════════════════════════════════════════════
-// SNAP: cari waypoint terdekat dari titik arbitrary
-// ═══════════════════════════════════════════════
-function findNearestWaypoints(coord, k = 5) {
+// ═══════════════════════════════════════════════════════════════
+// SNAP ke waypoint terdekat yang LOS
+// ═══════════════════════════════════════════════════════════════
+function findNearestWaypoints(coord, k = 8) {
   return waypoints
     .map((wp, i) => ({ i, d: dist(coord, [wp.lat, wp.lng]) }))
     .sort((a,b) => a.d - b.d)
     .slice(0, k);
 }
 
-// ═══════════════════════════════════════════════
-// A* PADA WAYPOINT GRAPH
-// ═══════════════════════════════════════════════
+function pickReachable(coord, candidates) {
+  const reachable = candidates.filter(({ i }) =>
+    canSee(coord, [waypoints[i].lat, waypoints[i].lng], 25)
+  );
+  if (reachable.length >= 1) return reachable.slice(0, 4);
+  return candidates.slice(0, 3);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// A* PADA GRAPH WAYPOINT + VIRTUAL START/END
+// ═══════════════════════════════════════════════════════════════
 class MinHeap {
   constructor() { this.h = []; }
   push(item) { this.h.push(item); this._up(this.h.length-1); }
@@ -309,33 +350,25 @@ class MinHeap {
   get size() { return this.h.length; }
 }
 
-// id: angka = waypoint index; 'S' = start virtual; 'E' = end virtual
-// extraEdges: { 'S': [wpIdx,...], 'E': [wpIdx,...], wpIdx: ['S'|'E',...] }
-function astar(srcId, dstId, extraEdges, coordOf) {
+function astarWithVirtual(srcId, dstId, extraEdges, coordOf) {
   const heap = new MinHeap();
   heap.push([0, srcId]);
-  const g   = new Map([[srcId, 0]]);
+  const g = new Map([[srcId, 0]]);
   const came = new Map();
-  const vis  = new Set();
+  const vis = new Set();
   let iter = 0;
-
   while (heap.size && iter++ < MAX_ITER) {
     const [, cur] = heap.pop();
     if (vis.has(cur)) continue;
     vis.add(cur);
     if (cur === dstId) {
-      const path = []; let c = cur;
+      const path = [];
+      let c = cur;
       while (came.has(c)) { path.push(c); c = came.get(c); }
       path.push(srcId);
       return path.reverse();
     }
-
-    // tetangga dari wpGraph + extraEdges
-    const neighbors = [
-      ...(typeof cur === 'number' ? (wpGraph[cur] || []) : []),
-      ...(extraEdges[cur] || [])
-    ];
-
+    const neighbors = [...(extraEdges[cur] || []), ...(typeof cur === 'number' ? (wpGraph[cur] || []) : [])];
     for (const nb of neighbors) {
       if (vis.has(nb)) continue;
       const ng = (g.get(cur) || 0) + dist(coordOf(cur), coordOf(nb));
@@ -347,45 +380,57 @@ function astar(srcId, dstId, extraEdges, coordOf) {
       }
     }
   }
-  return null; // tidak ada jalur
+  return null;
 }
 
-// ═══════════════════════════════════════════════
-// MAIN ROUTE
-// ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// ROUTING UTAMA
+// ═══════════════════════════════════════════════════════════════
 async function runRoute() {
-  if (!start || !end) { alert("Pilih Start dan Tujuan dulu!"); return; }
+  if (!start || !end) {
+    alert("⚠️ Tentukan START dan FINISH dulu! (gunakan input koordinat atau klik peta)");
+    return;
+  }
   if (isRouting) return;
-  if (!wpReady)  { alert("Data belum selesai dimuat, tunggu sebentar..."); return; }
-  isRouting = true;
+  if (!wpReady || waypoints.length === 0) {
+    alert("Data waypoint belum siap, tunggu sebentar...");
+    return;
+  }
 
+  isRouting = true;
   showProgress(0.1);
-  setStatus("🔍 Mencari waypoint terdekat...", "#f39c12");
+  setStatus("🔍 Mencari waypoint terdekat & LOS...", "#f39c12");
   await tick();
 
-  // Snap start & end ke beberapa WP terdekat yang bisa dilihat
   const startCoord = start;
-  const endCoord   = end;
+  const endCoord = end;
 
-  // Cari kandidat WP dari start
+  if (isBlocked(startCoord[0], startCoord[1])) {
+    setStatus("❌ START berada di daratan! pilih di laut.", "red");
+    alert("Start tidak boleh di darat. Pilih titik di perairan.");
+    isRouting = false; hideProgress(); return;
+  }
+  if (isBlocked(endCoord[0], endCoord[1])) {
+    setStatus("❌ FINISH di daratan!", "red");
+    alert("Finish tidak boleh di daratan.");
+    isRouting = false; hideProgress(); return;
+  }
+
   const startCands = findNearestWaypoints(startCoord, 12);
-  const endCands   = findNearestWaypoints(endCoord,   12);
-
-  // Filter yang LOS-clear (atau ambil 3 terdekat jika semua blocked)
+  const endCands = findNearestWaypoints(endCoord, 12);
   const startWPs = pickReachable(startCoord, startCands);
-  const endWPs   = pickReachable(endCoord,   endCands);
+  const endWPs = pickReachable(endCoord, endCands);
 
   if (!startWPs.length || !endWPs.length) {
-    setStatus("❌ Tidak bisa menjangkau waypoint terdekat", "red");
-    setInfo("Coba klik titik yang lebih dekat ke jalur pelayaran.");
+    setStatus("❌ Tidak terhubung ke waypoint terdekat (terhalang daratan?)", "red");
+    setInfo("Coba pilih titik lebih dekat ke jalur pelayaran atau ganti koordinat.");
     isRouting = false; hideProgress(); return;
   }
 
   showProgress(0.3);
-  setStatus("🚀 Menghitung rute...", "#2ecc71");
+  setStatus("🚀 Menjalankan A* di jaringan waypoint...", "#2ecc71");
   await tick();
 
-  // Virtual node 'S' dan 'E'
   const extraEdges = { 'S': [], 'E': [] };
   for (const { i } of startWPs) {
     extraEdges['S'].push(i);
@@ -398,9 +443,8 @@ async function runRoute() {
     extraEdges[i].push('E');
   }
 
-  // Kalau start dan end sangat dekat satu WP yang sama, langsung hubungkan
-  const sharedWP = startWPs.find(s => endWPs.some(e => e.i === s.i));
-  if (sharedWP) {
+  const shared = startWPs.find(s => endWPs.some(e => e.i === s.i));
+  if (shared) {
     extraEdges['S'].push('E');
     extraEdges['E'].push('S');
   }
@@ -411,124 +455,157 @@ async function runRoute() {
     return [waypoints[id].lat, waypoints[id].lng];
   };
 
-  const pathIds = astar('S', 'E', extraEdges, coordOf);
-  showProgress(0.9);
+  const pathIds = astarWithVirtual('S', 'E', extraEdges, coordOf);
+  showProgress(0.85);
 
   if (!pathIds || pathIds.length < 2) {
-    // Coba langsung hubungkan S→E jika bisa lihat satu sama lain
+    // cek jalur langsung tanpa waypoint
     if (canSee(startCoord, endCoord, 40)) {
       drawRoute([startCoord, endCoord]);
-      const km  = distKm(startCoord, endCoord).toFixed(1);
-      const nm  = (distKm(startCoord, endCoord) / 1.852).toFixed(0);
-      setStatus(`✅ Jalur langsung: ${km} km (${nm} nm)`, "#27ae60");
-      setInfo("Rute langsung (tidak ada waypoint di antaranya).");
+      const km = distKm(startCoord, endCoord).toFixed(1);
+      const nm = (distKm(startCoord, endCoord) / 1.852).toFixed(0);
+      setStatus(`✅ Jalur Langsung: ${km} km (${nm} nm)`, "#27ae60");
+      setInfo("Rute langsung tanpa waypoint (LOS memungkinkan).");
     } else {
-      setStatus("❌ Rute tidak ditemukan", "red");
-      setInfo("Coba pilih titik yang lebih dekat ke jalur pelayaran utama.");
-      alert("Jalur tidak ditemukan.\nPastikan titik Start & Tujuan berada di laut dekat jalur pelayaran.");
+      setStatus("❌ Rute tidak ditemukan (blokade daratan / gap waypoint)", "red");
+      setInfo("Tidak ada koneksi antar waypoint. Coba koordinat lain.");
     }
     showProgress(1); setTimeout(hideProgress, 600);
-    isRouting = false; return;
+    isRouting = false;
+    return;
   }
 
-  // Susun koordinat rute
   const coords = pathIds.map(id => coordOf(id));
   drawRoute(coords);
-
-  // Hitung total jarak
   let totalKm = 0;
-  for (let i = 1; i < coords.length; i++) totalKm += distKm(coords[i-1], coords[i]);
+  for (let i=1; i<coords.length; i++) totalKm += distKm(coords[i-1], coords[i]);
   const nm = (totalKm / 1.852).toFixed(0);
   const wpCount = pathIds.filter(id => id !== 'S' && id !== 'E').length;
+  setStatus(`✅ ${totalKm.toFixed(1)} km · ${nm} nautical miles`, "#27ae60");
+  setInfo(`🎯 Rute via ${wpCount} waypoint internal · ${coords.length} titik lintasan. Jarak total ${totalKm.toFixed(1)} km.`);
 
-  setStatus(`✅ ${totalKm.toFixed(1)} km · ${nm} nm`, "#27ae60");
-  setInfo(`🎯 Rute via ${wpCount} waypoint (tidak ditampilkan) · ${coords.length} titik jalur`);
-
-  showProgress(1); setTimeout(hideProgress, 600);
+  showProgress(1);
+  setTimeout(hideProgress, 500);
   isRouting = false;
-}
-
-// Pilih WP yang bisa dilihat dari titik coord, atau fallback 3 terdekat
-function pickReachable(coord, candidates) {
-  const reachable = candidates.filter(({ i }) =>
-    canSee(coord, [waypoints[i].lat, waypoints[i].lng], 25)
-  );
-  if (reachable.length >= 1) return reachable.slice(0, 4);
-  // fallback: ambil 3 terdekat tanpa cek LOS
-  return candidates.slice(0, 3);
 }
 
 function drawRoute(coords) {
   if (routeLine) map.removeLayer(routeLine);
   routeLine = L.polyline(coords, {
-    color: '#2980b9', weight: 5, opacity: 0.92,
-    lineJoin: 'round', lineCap: 'round'
+    color: '#1e88e5', weight: 5, opacity: 0.9, lineJoin: 'round'
   }).addTo(map);
-  map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
+  map.fitBounds(routeLine.getBounds(), { padding: [45,45] });
 }
 
-// ═══════════════════════════════════════════════
-// UI
-// ═══════════════════════════════════════════════
-const tick = () => new Promise(r => setTimeout(r, 0));
+// ═══════════════════════════════════════════════════════════════
+// UI, MARKER & KOORDINAT INPUT HANDLER
+// ═══════════════════════════════════════════════════════════════
+function updateStartMarker(lat, lng) {
+  if (startMarker) map.removeLayer(startMarker);
+  const icon = L.divIcon({ html: `<span style="font-size:26px;">🚢</span>`, iconSize: [28,28], className: '', iconAnchor: [14,28] });
+  startMarker = L.marker([lat,lng], { icon: icon }).addTo(map).bindPopup("⚓ START").openPopup();
+}
+
+function updateEndMarker(lat, lng) {
+  if (endMarker) map.removeLayer(endMarker);
+  const icon = L.divIcon({ html: `<span style="font-size:26px;">🏁</span>`, iconSize: [28,28], className: '', iconAnchor: [14,28] });
+  endMarker = L.marker([lat,lng], { icon: icon }).addTo(map).bindPopup("🏆 FINISH").openPopup();
+}
+
+function applyStartFromInput() {
+  let lat = parseFloat(document.getElementById('startLat').value);
+  let lng = parseFloat(document.getElementById('startLng').value);
+  if (isNaN(lat) || isNaN(lng)) { alert("Masukkan angka valid untuk Start"); return; }
+  if (lat < -11 || lat > 7 || lng < 94 || lng > 141) alert("Koordinat di luar perairan Nusantara, tetap dilanjutkan?");
+  start = [lat, lng];
+  updateStartMarker(lat, lng);
+  setStatus(`✅ Start ditetapkan: (${lat.toFixed(4)}, ${lng.toFixed(4)})`, "#2c7da0");
+  if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+}
+
+function applyEndFromInput() {
+  let lat = parseFloat(document.getElementById('endLat').value);
+  let lng = parseFloat(document.getElementById('endLng').value);
+  if (isNaN(lat) || isNaN(lng)) { alert("Masukkan angka valid untuk Finish"); return; }
+  end = [lat, lng];
+  updateEndMarker(lat, lng);
+  setStatus(`✅ Finish ditetapkan: (${lat.toFixed(4)}, ${lng.toFixed(4)})`, "#8e6c8f");
+  if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+}
 
 function setMode(m) {
   if (isRouting) return;
   mode = m;
-  setStatus(`📍 Klik titik ${m === 'start' ? 'START' : 'TUJUAN'} di laut`, "#3498db");
+  setStatus(`🖱️ Klik di peta untuk menentukan ${mode === 'start' ? 'START' : 'FINISH'}`, "#3498db");
 }
 
 function clearAll() {
   if (isRouting) return;
-  [routeLine, startMarker, endMarker].forEach(l => { if (l) map.removeLayer(l); });
+  if (routeLine) map.removeLayer(routeLine);
+  if (startMarker) map.removeLayer(startMarker);
+  if (endMarker) map.removeLayer(endMarker);
+  start = end = null;
   routeLine = startMarker = endMarker = null;
-  start = end = mode = null;
-  setStatus("Reset. Pilih titik baru.", "#7f8c8d");
-  setInfo("Pilih titik Start & Tujuan di laut, lalu cari rute.");
+  mode = null;
+  setStatus("Reset total. Gunakan input koordinat atau pilih peta.", "#7f8c8d");
+  setInfo("🗑️ Semua dihapus. Masukkan koordinat atau klik tombol pilih di peta.");
+  document.getElementById('startLat').value = "-6.2088";
+  document.getElementById('startLng').value = "106.8456";
+  document.getElementById('endLat').value = "-7.2575";
+  document.getElementById('endLng').value = "112.7521";
 }
 
-function setStatus(txt, col = "#e67e22") {
-  const el = document.getElementById('status');
-  el.innerText = txt; el.style.color = col;
-}
-function setInfo(txt) { document.getElementById('infoBox').innerHTML = txt; }
-function showProgress(p) {
-  document.getElementById('progressBar').style.display = 'block';
-  document.getElementById('progressFill').style.width = Math.round(p*100) + '%';
-}
-function hideProgress() { document.getElementById('progressBar').style.display = 'none'; }
-
+// Event listener klik peta (mode)
 map.on('click', e => {
   if (!mode || isRouting) return;
   const lat = e.latlng.lat, lng = e.latlng.lng;
-
   if (islands.length && isBlocked(lat, lng)) {
-    alert("⚠️ Titik di daratan! Pilih di laut."); return;
+    alert("❌ Titik di daratan! Pilih di perairan lepas.");
+    return;
   }
-
-  const icon = (emoji) => L.divIcon({
-    html: `<span style="font-size:24px;line-height:1">${emoji}</span>`,
-    iconSize: [28, 28], className: '', iconAnchor: [14, 14]
-  });
-
   if (mode === 'start') {
     start = [lat, lng];
-    if (startMarker) map.removeLayer(startMarker);
-    startMarker = L.marker([lat,lng], { icon: icon('🚢') })
-      .addTo(map).bindPopup("Start");
+    updateStartMarker(lat, lng);
+    document.getElementById('startLat').value = lat.toFixed(6);
+    document.getElementById('startLng').value = lng.toFixed(6);
+    setStatus(`📍 Start dari peta: ${lat.toFixed(4)}, ${lng.toFixed(4)}`, "#2c7da0");
   } else {
     end = [lat, lng];
-    if (endMarker) map.removeLayer(endMarker);
-    endMarker = L.marker([lat,lng], { icon: icon('🏁') })
-      .addTo(map).bindPopup("Tujuan");
+    updateEndMarker(lat, lng);
+    document.getElementById('endLat').value = lat.toFixed(6);
+    document.getElementById('endLng').value = lng.toFixed(6);
+    setStatus(`🏁 Finish dari peta: ${lat.toFixed(4)}, ${lng.toFixed(4)}`, "#8e6c8f");
   }
+  if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
   mode = null;
-  setStatus("✅ Tersimpan. Tekan 'Cari Rute'.", "#27ae60");
 });
 
+function setStatus(txt, col="#e67e22") { 
+  const el = document.getElementById('status'); 
+  el.innerText = txt; 
+  el.style.color = col; 
+}
+function setInfo(txt) { document.getElementById('infoBox').innerHTML = txt; }
+function showProgress(p) { 
+  document.getElementById('progressBar').style.display = 'block'; 
+  document.getElementById('progressFill').style.width = Math.round(p*100)+'%'; 
+}
+function hideProgress() { document.getElementById('progressBar').style.display = 'none'; }
+const tick = () => new Promise(r => setTimeout(r, 10));
+
 window.addEventListener('load', () => {
-  setStatus("Memuat islands.json & waypoint.json...");
+  setStatus("Memuat peta & data maritim...", "#2c7da0");
+  // default start/finish dari input nilai awal
+  setTimeout(() => {
+    if (!start) applyStartFromInput();
+    if (!end) applyEndFromInput();
+  }, 800);
 });
+
+document.getElementById('applyStartBtn').addEventListener('click', applyStartFromInput);
+document.getElementById('applyEndBtn').addEventListener('click', applyEndFromInput);
+document.getElementById('pickStartMapBtn').addEventListener('click', () => { setMode('start'); setStatus("🖱️ Klik di peta untuk START", "#3498db"); });
+document.getElementById('pickEndMapBtn').addEventListener('click', () => { setMode('end'); setStatus("🖱️ Klik di peta untuk FINISH", "#9b59b6"); });
 </script>
 </body>
 </html>
