@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Marine Router Indonesia - Dengan Input Koordinat</title>
+  <title>Marine Router Indonesia - Input Koordinat Kosong</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -10,7 +10,6 @@
     body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; background: #f0f2f5; }
     #map { height: 100vh; width: 100vw; }
 
-    /* Panel utama lebih lebar untuk input koordinat */
     .panel {
       position: absolute; top: 15px; left: 15px;
       background: rgba(255,255,255,0.97);
@@ -18,15 +17,16 @@
       border-radius: 20px;
       z-index: 1000;
       box-shadow: 0 8px 28px rgba(0,0,0,0.15);
-      width: 300px;
+      width: 320px;
       font-size: 13px;
       backdrop-filter: blur(2px);
       border: 1px solid rgba(0,0,0,0.05);
+      max-height: 95vh;
+      overflow-y: auto;
     }
     .title { font-size: 16px; font-weight: 800; color: #0a2b3e; margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
     .sub   { font-size: 10px; color: #5d6e7e; margin-bottom: 12px; border-left: 2px solid #2c7da0; padding-left: 8px; }
 
-    /* Koordinat input group */
     .coord-group {
       background: #f8fafc;
       border-radius: 16px;
@@ -63,6 +63,9 @@
       outline: none;
       box-shadow: 0 0 0 2px rgba(44,125,160,0.2);
     }
+    .coord-row input.empty-field {
+      color: #6c757d;
+    }
     .btn-sm {
       background: #eef2f5;
       border: none;
@@ -97,6 +100,7 @@
     .info { font-size: 11px; color: #2c3e50; background: #eef4ff; border-radius: 14px; padding: 8px 10px; line-height: 1.45; margin-top: 8px; border-left: 3px solid #2c7da0; }
     .sep { border: none; border-top: 1px solid #dce5ec; margin: 10px 0; }
     .hint { font-size: 9px; color: #6c868e; margin-top: 5px; text-align: center; }
+    .warning-badge { background: #fff3cd; color: #856404; padding: 4px 8px; border-radius: 12px; font-size: 10px; margin-top: 6px; text-align: center; }
   </style>
 </head>
 <body>
@@ -106,12 +110,12 @@
   </div>
   <div class="sub">Waypoint Graph · Jalur Laut Aman</div>
 
-  <!-- INPUT KOORDINAT START -->
+  <!-- INPUT KOORDINAT START (KOSONG) -->
   <div class="coord-group">
     <div class="coord-title">📍 START (LAT, LON)</div>
     <div class="coord-row">
-      <input type="text" id="startLat" placeholder="Latitude (-8.650)" value="-6.2088">
-      <input type="text" id="startLng" placeholder="Longitude (106.845)" value="106.8456">
+      <input type="text" id="startLat" placeholder="Contoh: -6.2088" value="">
+      <input type="text" id="startLng" placeholder="Contoh: 106.8456" value="">
     </div>
     <div style="display: flex; gap: 8px; justify-content: flex-end;">
       <button class="btn-sm" id="applyStartBtn">📍 Terapkan Start</button>
@@ -119,12 +123,12 @@
     </div>
   </div>
 
-  <!-- INPUT KOORDINAT FINISH -->
+  <!-- INPUT KOORDINAT FINISH (KOSONG) -->
   <div class="coord-group">
     <div class="coord-title">🏁 FINISH (LAT, LON)</div>
     <div class="coord-row">
-      <input type="text" id="endLat" placeholder="Latitude (-7.257)" value="-7.2575">
-      <input type="text" id="endLng" placeholder="Longitude (112.752)" value="112.7521">
+      <input type="text" id="endLat" placeholder="Contoh: -7.2575" value="">
+      <input type="text" id="endLng" placeholder="Contoh: 112.7521" value="">
     </div>
     <div style="display: flex; gap: 8px; justify-content: flex-end;">
       <button class="btn-sm" id="applyEndBtn">🏁 Terapkan Finish</button>
@@ -141,8 +145,9 @@
 
   <div class="status-wrap">📡 <span id="status">Memuat data & waypoint...</span></div>
   <div id="progressBar"><div id="progressFill"></div></div>
-  <div class="info" id="infoBox">✅ Gunakan input koordinat atau klik tombol pilih di peta.<br>Start & Finish otomatis ditandai.</div>
+  <div class="info" id="infoBox">✅ Masukkan koordinat Start & Finish, atau klik tombol pilih di peta.<br>Kedua kolom awal kosong.</div>
   <div class="hint">💡 Rute menggunakan ribuan waypoint (tidak tampil) & hindari daratan</div>
+  <div class="warning-badge" id="reminderMsg">⚠️ Isi kedua koordinat sebelum mencari rute</div>
 </div>
 
 <div id="map"></div>
@@ -151,19 +156,19 @@
 // ═══════════════════════════════════════════════════════════════
 // KONSTANTA & GLOBAL STATE
 // ═══════════════════════════════════════════════════════════════
-const WP_CONNECT_RADIUS = 3.0;   // derajat
+const WP_CONNECT_RADIUS = 3.0;
 const WP_K_NEAR         = 8;
 const MAX_ITER          = 200000;
 
 let islands   = [];
-let waypoints = [];       // {lat, lng, name?}
+let waypoints = [];
 let wpGraph   = {};
 let wpReady   = false;
 let islandsReady = false;
 
 let start = null;        // [lat, lng]
 let end   = null;
-let mode  = null;        // 'start' atau 'end' untuk mode klik peta
+let mode  = null;
 let routeLine, startMarker, endMarker;
 let isRouting = false;
 
@@ -224,7 +229,7 @@ function canSee(a, b, samples = 24) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// LOAD DATA (islands.json + waypoint.json)
+// LOAD DATA
 // ═══════════════════════════════════════════════════════════════
 fetch('islands.json')
   .then(r => r.json())
@@ -260,7 +265,6 @@ fetch('waypoint.json')
   .then(r => r.json())
   .then(data => {
     waypoints = (data.waypoints || data || []).filter(w => w.lat && w.lng);
-    // WAYPOINT TIDAK DITAMPILKAN (Marker waypoint dihapus sesuai permintaan)
     setStatus(`📍 ${waypoints.length} waypoint dimuat (tersembunyi)`, "#2980b9");
     tryBuildGraph();
   })
@@ -270,7 +274,7 @@ fetch('waypoint.json')
   });
 
 function tryBuildGraph() {
-  if (!islandsReady || waypoints.length === 0 || wpGraph && Object.keys(wpGraph).length > 0) return;
+  if (!islandsReady || waypoints.length === 0 || (wpGraph && Object.keys(wpGraph).length > 0)) return;
   buildWaypointGraph();
 }
 
@@ -301,9 +305,6 @@ function buildWaypointGraph() {
   setInfo(`Graf terbentuk: ${waypoints.length} titik waypoint (tersembunyi). Siap routing.`);
 }
 
-// ═══════════════════════════════════════════════════════════════
-// SNAP ke waypoint terdekat yang LOS
-// ═══════════════════════════════════════════════════════════════
 function findNearestWaypoints(coord, k = 8) {
   return waypoints
     .map((wp, i) => ({ i, d: dist(coord, [wp.lat, wp.lng]) }))
@@ -320,7 +321,7 @@ function pickReachable(coord, candidates) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// A* PADA GRAPH WAYPOINT + VIRTUAL START/END
+// A* 
 // ═══════════════════════════════════════════════════════════════
 class MinHeap {
   constructor() { this.h = []; }
@@ -388,7 +389,7 @@ function astarWithVirtual(srcId, dstId, extraEdges, coordOf) {
 // ═══════════════════════════════════════════════════════════════
 async function runRoute() {
   if (!start || !end) {
-    alert("⚠️ Tentukan START dan FINISH dulu! (gunakan input koordinat atau klik peta)");
+    alert("⚠️ Tentukan START dan FINISH dulu! Masukkan koordinat atau klik peta.");
     return;
   }
   if (isRouting) return;
@@ -422,8 +423,8 @@ async function runRoute() {
   const endWPs = pickReachable(endCoord, endCands);
 
   if (!startWPs.length || !endWPs.length) {
-    setStatus("❌ Tidak terhubung ke waypoint terdekat (terhalang daratan?)", "red");
-    setInfo("Coba pilih titik lebih dekat ke jalur pelayaran atau ganti koordinat.");
+    setStatus("❌ Tidak terhubung ke waypoint terdekat", "red");
+    setInfo("Coba pilih titik lebih dekat ke jalur pelayaran.");
     isRouting = false; hideProgress(); return;
   }
 
@@ -459,7 +460,6 @@ async function runRoute() {
   showProgress(0.85);
 
   if (!pathIds || pathIds.length < 2) {
-    // cek jalur langsung tanpa waypoint
     if (canSee(startCoord, endCoord, 40)) {
       drawRoute([startCoord, endCoord]);
       const km = distKm(startCoord, endCoord).toFixed(1);
@@ -482,7 +482,7 @@ async function runRoute() {
   const nm = (totalKm / 1.852).toFixed(0);
   const wpCount = pathIds.filter(id => id !== 'S' && id !== 'E').length;
   setStatus(`✅ ${totalKm.toFixed(1)} km · ${nm} nautical miles`, "#27ae60");
-  setInfo(`🎯 Rute via ${wpCount} waypoint internal · ${coords.length} titik lintasan. Jarak total ${totalKm.toFixed(1)} km.`);
+  setInfo(`🎯 Rute via ${wpCount} waypoint internal · ${coords.length} titik. Jarak ${totalKm.toFixed(1)} km.`);
 
   showProgress(1);
   setTimeout(hideProgress, 500);
@@ -498,7 +498,7 @@ function drawRoute(coords) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// UI, MARKER & KOORDINAT INPUT HANDLER
+// UI HANDLER DENGAN KOLOM KOSONG
 // ═══════════════════════════════════════════════════════════════
 function updateStartMarker(lat, lng) {
   if (startMarker) map.removeLayer(startMarker);
@@ -515,21 +515,26 @@ function updateEndMarker(lat, lng) {
 function applyStartFromInput() {
   let lat = parseFloat(document.getElementById('startLat').value);
   let lng = parseFloat(document.getElementById('startLng').value);
-  if (isNaN(lat) || isNaN(lng)) { alert("Masukkan angka valid untuk Start"); return; }
-  if (lat < -11 || lat > 7 || lng < 94 || lng > 141) alert("Koordinat di luar perairan Nusantara, tetap dilanjutkan?");
+  if (isNaN(lat) || isNaN(lng)) { 
+    alert("Masukkan angka valid untuk Start (Latitude & Longitude)"); 
+    return; 
+  }
   start = [lat, lng];
   updateStartMarker(lat, lng);
-  setStatus(`✅ Start ditetapkan: (${lat.toFixed(4)}, ${lng.toFixed(4)})`, "#2c7da0");
+  setStatus(`✅ Start ditetapkan: (${lat.toFixed(5)}, ${lng.toFixed(5)})`, "#2c7da0");
   if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
 }
 
 function applyEndFromInput() {
   let lat = parseFloat(document.getElementById('endLat').value);
   let lng = parseFloat(document.getElementById('endLng').value);
-  if (isNaN(lat) || isNaN(lng)) { alert("Masukkan angka valid untuk Finish"); return; }
+  if (isNaN(lat) || isNaN(lng)) { 
+    alert("Masukkan angka valid untuk Finish (Latitude & Longitude)"); 
+    return; 
+  }
   end = [lat, lng];
   updateEndMarker(lat, lng);
-  setStatus(`✅ Finish ditetapkan: (${lat.toFixed(4)}, ${lng.toFixed(4)})`, "#8e6c8f");
+  setStatus(`✅ Finish ditetapkan: (${lat.toFixed(5)}, ${lng.toFixed(5)})`, "#8e6c8f");
   if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
 }
 
@@ -547,15 +552,15 @@ function clearAll() {
   start = end = null;
   routeLine = startMarker = endMarker = null;
   mode = null;
-  setStatus("Reset total. Gunakan input koordinat atau pilih peta.", "#7f8c8d");
-  setInfo("🗑️ Semua dihapus. Masukkan koordinat atau klik tombol pilih di peta.");
-  document.getElementById('startLat').value = "-6.2088";
-  document.getElementById('startLng').value = "106.8456";
-  document.getElementById('endLat').value = "-7.2575";
-  document.getElementById('endLng').value = "112.7521";
+  // Kosongkan semua input fields
+  document.getElementById('startLat').value = '';
+  document.getElementById('startLng').value = '';
+  document.getElementById('endLat').value = '';
+  document.getElementById('endLng').value = '';
+  setStatus("Reset total. Kolom koordinat dikosongkan.", "#7f8c8d");
+  setInfo("🗑️ Semua dihapus. Masukkan koordinat baru atau klik peta.");
 }
 
-// Event listener klik peta (mode)
 map.on('click', e => {
   if (!mode || isRouting) return;
   const lat = e.latlng.lat, lng = e.latlng.lng;
@@ -568,13 +573,13 @@ map.on('click', e => {
     updateStartMarker(lat, lng);
     document.getElementById('startLat').value = lat.toFixed(6);
     document.getElementById('startLng').value = lng.toFixed(6);
-    setStatus(`📍 Start dari peta: ${lat.toFixed(4)}, ${lng.toFixed(4)}`, "#2c7da0");
+    setStatus(`📍 Start dari peta: ${lat.toFixed(5)}, ${lng.toFixed(5)}`, "#2c7da0");
   } else {
     end = [lat, lng];
     updateEndMarker(lat, lng);
     document.getElementById('endLat').value = lat.toFixed(6);
     document.getElementById('endLng').value = lng.toFixed(6);
-    setStatus(`🏁 Finish dari peta: ${lat.toFixed(4)}, ${lng.toFixed(4)}`, "#8e6c8f");
+    setStatus(`🏁 Finish dari peta: ${lat.toFixed(5)}, ${lng.toFixed(5)}`, "#8e6c8f");
   }
   if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
   mode = null;
@@ -595,11 +600,7 @@ const tick = () => new Promise(r => setTimeout(r, 10));
 
 window.addEventListener('load', () => {
   setStatus("Memuat peta & data maritim...", "#2c7da0");
-  // default start/finish dari input nilai awal
-  setTimeout(() => {
-    if (!start) applyStartFromInput();
-    if (!end) applyEndFromInput();
-  }, 800);
+  // Tidak ada default value, semua field kosong
 });
 
 document.getElementById('applyStartBtn').addEventListener('click', applyStartFromInput);
