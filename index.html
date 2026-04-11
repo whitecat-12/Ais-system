@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <title>Marine Router Indonesia - Smart Route Laut + Simulasi Kapal</title>
+  <title>Marine Router Indonesia - Smart Route Laut + Simulasi Kapal (Satelit)</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, viewport-fit=cover" />
   <!-- Leaflet CSS & JS -->
@@ -44,7 +44,7 @@
       left: 16px;
       right: 16px;
       max-width: 380px;
-      max-height: calc(100vh - 32px); /* Batas maksimal tinggi panel */
+      max-height: calc(100vh - 32px);
       background: rgba(255, 255, 255, 0.98);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
@@ -55,7 +55,7 @@
       transition: all 0.25s ease;
       display: flex;
       flex-direction: column;
-      overflow: hidden; /* Header tetap, konten di-scroll */
+      overflow: hidden;
     }
 
     /* header navbar: sangat minimalis, hanya icon + teks & toggle (tetap di atas) */
@@ -117,16 +117,14 @@
     /* AREA SCROLL UNTUK KONTEN - SLIDER BAR AKAN MUNCUL OTOMATIS */
     .nav-content {
       flex: 1;
-      overflow-y: auto;  /* Scroll vertikal otomatis */
+      overflow-y: auto;
       overflow-x: hidden;
       padding: 16px 18px 20px 18px;
       transition: all 0.2s;
-      /* Styling scrollbar agar lebih modern */
       scrollbar-width: thin;
       scrollbar-color: #249bc7 #e0edf5;
     }
     
-    /* Custom scrollbar untuk Webkit (Chrome, Edge, Safari) */
     .nav-content::-webkit-scrollbar {
       width: 5px;
     }
@@ -146,7 +144,6 @@
       background: #1a7a9e;
     }
 
-    /* Konten saat panel di-collapse disembunyikan */
     .marine-nav.collapsed .nav-content {
       display: none;
     }
@@ -322,7 +319,6 @@
       font-family: inherit;
     }
 
-    /* responsif: pada layar kecil, pastikan panel tidak terlalu tinggi */
     @media (max-width: 460px) {
       .marine-nav {
         max-width: calc(100% - 32px);
@@ -342,8 +338,7 @@
 
 <div id="map"></div>
 
-<!-- NAVBAR / PANEL MINIMALIS (DENGAN SCROLL AREA) -->
-<!-- Ditambahkan class 'collapsed' agar navbar tertutup saat awal loading -->
+<!-- NAVBAR / PANEL MINIMALIS -->
 <div class="marine-nav collapsed" id="marineNav">
   <div class="nav-header" id="navHeader">
     <div class="brand">
@@ -352,13 +347,10 @@
       <i class="fas fa-water" style="font-size: 0.7rem; color:#3792b0;"></i>
     </div>
     <div class="toggle-icon" id="navToggleBtn">
-      <!-- Ikon panah ke bawah (chevron-down) untuk keadaan tertutup, karena nav akan terbuka ketika diklik -->
       <i class="fas fa-chevron-up" id="toggleIcon"></i>
     </div>
   </div>
-  <!-- KONTEN YANG BISA DI-SCROLL (SLIDER BAR AKAN MUNCUL) -->
   <div class="nav-content">
-    <!-- VESSEL data -->
     <div class="input-group">
       <div class="input-label"><i class="fas fa-fish"></i> DATA KAPAL (AIS)</div>
       <div class="flex-row">
@@ -371,7 +363,6 @@
       </div>
     </div>
 
-    <!-- START point -->
     <div class="input-group">
       <div class="input-label"><i class="fas fa-map-marker-alt"></i> TITIK AWAL</div>
       <div class="flex-row">
@@ -384,7 +375,6 @@
       </div>
     </div>
 
-    <!-- END point -->
     <div class="input-group">
       <div class="input-label"><i class="fas fa-flag-checkered"></i> TITIK AKHIR</div>
       <div class="flex-row">
@@ -397,7 +387,6 @@
       </div>
     </div>
 
-    <!-- Action buttons -->
     <button class="btn-primary-solid" id="runRouteBtn"><i class="fas fa-route"></i> HITUNG RUTE LAUT</button>
     <button class="btn-outline" id="animateBtn"><i class="fas fa-play"></i> MULAI ANIMASI KAPAL</button>
     <button class="btn-outline" id="clearAllBtn"><i class="fas fa-trash-alt"></i> RESET SEMUA</button>
@@ -418,7 +407,24 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
   // --------------------------------------------------------------
-  // KONFIGURASI & GLOBAL STATE (tetap sama seperti core logic)
+  // KONFIGURASI MAPTILER SATELLITE
+  // --------------------------------------------------------------
+  const MAPTILER_API_KEY = 'mP5EMYL63473c6VT5cg6';
+  
+  // Membuat peta dengan tileset satelit dari MapTiler
+  const map = L.map('map', { zoomControl: false }).setView([-2.5, 118], 5);
+  
+  // Layer Satelit MapTiler (Hybrid Satellite)
+  L.tileLayer(`https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}.jpg?key=${MAPTILER_API_KEY}`, {
+    attribution: '&copy; <a href="https://www.maptiler.com/copyright/" target="_blank">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors',
+    maxZoom: 20,
+    tileSize: 512,
+    zoomOffset: -1,
+    crossOrigin: true
+  }).addTo(map);
+
+  // --------------------------------------------------------------
+  // GLOBAL STATE & LOGIC (Sama seperti sebelumnya)
   // --------------------------------------------------------------
   const WP_CONNECT_RADIUS = 3.0;
   const WP_K_NEAR         = 9;
@@ -439,13 +445,6 @@
   let animationInterval = null;
   let shipMarker = null;
   let currentAnimIndex = 0;
-  
-  const map = L.map('map', { zoomControl: false }).setView([-2.5, 118], 5);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> & CartoDB',
-    subdomains: 'abcd',
-    maxZoom: 19
-  }).addTo(map);
   
   // helper geometri
   function dist(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
@@ -687,13 +686,45 @@
     if(animationInterval) { clearInterval(animationInterval); animationInterval = null; }
   }
   
+  // ========== FUNGSI IKON KAPAL DENGAN KETERANGAN KECIL ==========
   function createShipIcon() {
     const shipName = document.getElementById('shipName').value || "Kapal";
+    const shipMMSI = document.getElementById('shipMMSI').value || "-";
+    const shipLength = document.getElementById('shipLength').value || "?";
+    const shipDraft = document.getElementById('shipDraft').value || "?";
+    
+    // Ikon div dengan styling lebih kecil dan ringkas
     return L.divIcon({
-      html: `<div style="background:#1e6c8c; border-radius: 40px; padding: 4px 12px; color:white; font-weight:600; font-size:11px; white-space:nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.25); border: 1px solid #ffd966;"><i class="fas fa-ship" style="margin-right:4px;"></i> ${shipName.substring(0,12)}</div>`,
-      iconSize: [90, 28],
-      className: '',
-      iconAnchor: [45, 14]
+      html: `
+        <div style="
+          background: #1a5276; 
+          border-radius: 20px; 
+          padding: 3px 10px; 
+          color: white; 
+          font-weight: 500; 
+          font-size: 9px; 
+          white-space: nowrap; 
+          box-shadow: 0 2px 6px rgba(0,0,0,0.3); 
+          border: 1px solid #f1c40f;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          line-height: 1.2;
+        ">
+          <i class="fas fa-ship" style="font-size: 10px; margin-right: 2px;"></i>
+          <div style="display: flex; flex-direction: column;">
+            <span style="font-weight: 700; font-size: 8.5px;">${shipName.substring(0, 15)}</span>
+            <span style="font-size: 7px; opacity: 0.9; display: flex; gap: 6px;">
+              <span><i class="fas fa-id-card" style="font-size:6px;"></i> ${shipMMSI.substring(0,9)}</span>
+              <span>📏 ${shipLength}m</span>
+              <span>⚓ ${shipDraft}m</span>
+            </span>
+          </div>
+        </div>
+      `,
+      iconSize: [150, 36],
+      iconAnchor: [75, 18],
+      className: 'ship-label'
     });
   }
   
@@ -806,7 +837,7 @@
     mode=null;
   });
   
-  // ========== NAVBAR COLLAPSE (dengan status awal TERTUTUP) ==========
+  // ========== NAVBAR COLLAPSE ==========
   const nav = document.getElementById('marineNav');
   const toggleNavBtn = document.getElementById('navToggleBtn');
   const toggleIconSpan = document.getElementById('toggleIcon');
@@ -814,39 +845,30 @@
   function toggleNavPanel() {
     nav.classList.toggle('collapsed');
     if(nav.classList.contains('collapsed')) {
-      // Saat collapsed (tertutup), icon panah mengarah ke bawah (chevron-down) sebagai indikator bisa dibuka
       toggleIconSpan.className = 'fas fa-chevron-down';
     } else {
-      // Saat terbuka, icon panah mengarah ke atas (chevron-up) sebagai indikator bisa ditutup
       toggleIconSpan.className = 'fas fa-chevron-up';
     }
   }
   
-  // Event listener untuk tombol toggle
   toggleNavBtn.addEventListener('click', (e) => { 
     e.stopPropagation(); 
     toggleNavPanel(); 
   });
   
-  // Event listener untuk header agar bisa toggle juga (kecuali jika klik di tombol toggle)
   document.getElementById('navHeader').addEventListener('click', (e) => { 
     if(e.target !== toggleNavBtn && !toggleNavBtn.contains(e.target)) {
       toggleNavPanel(); 
     }
   });
   
-  // Catatan: Karena kita ingin navbar TERTUTUP saat awal, class "collapsed" sudah ditambahkan pada div marine-nav di HTML.
-  // Untuk sinkronisasi icon: saat awal class collapsed ada, maka icon harusnya chevron-down (karena tertutup).
-  // Tapi di HTML kita set icon awal sebagai chevron-up, kita ubah manual sesuai state awal.
-  // Karena kita sudah memberikan class "collapsed" di HTML, maka kita set icon awal menjadi chevron-down.
-  // Namun karena skrip ini dijalankan setelah DOM ready, kita pastikan kembali ikonnya sesuai state collapsed.
   if (nav.classList.contains('collapsed')) {
     toggleIconSpan.className = 'fas fa-chevron-down';
   } else {
     toggleIconSpan.className = 'fas fa-chevron-up';
   }
   
-  // EVENT LISTENERS lainnya
+  // EVENT LISTENERS
   document.getElementById('applyStartBtn').addEventListener('click', applyStartFromInput);
   document.getElementById('applyEndBtn').addEventListener('click', applyEndFromInput);
   document.getElementById('pickStartMapBtn').addEventListener('click', ()=>setModeSelection('start'));
@@ -856,7 +878,7 @@
   document.getElementById('clearAllBtn').addEventListener('click', clearAll);
   
   window.addEventListener('load', ()=>{
-    setStatus("🌊 Marine Router + Animasi Kapal siap.", "#2f9e6b");
+    setStatus("🌊 Marine Router + Animasi Kapal siap (Mode Satelit).", "#2f9e6b");
   });
 </script>
 </body>
