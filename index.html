@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -294,7 +295,6 @@
     ];
 
     let currentStep = 0;
-    const progressFill = document.getElementById('progressFill');
     const progressPercent = document.getElementById('progressPercent');
     const statusMessage = document.getElementById('statusMessage');
 
@@ -307,9 +307,6 @@
       // Update progress (0%, 25%, 50%, 75%, 100%)
       const percent = Math.round((step + 1) * (100 / statusMessages.length));
       progressPercent.textContent = percent + '%';
-      
-      // Progress bar sudah dianimasikan dengan CSS, tapi kita bisa atur manual
-      // jika ingin lebih presisi. Biarkan CSS animation yang handle.
     }
 
     // Update status setiap 500ms
@@ -322,7 +319,7 @@
         
         // Setelah selesai, otomatis redirect ke aplikasi utama
         setTimeout(() => {
-          window.location.href = 'searoute.html'; // Ganti dengan nama file aplikasi utama Anda
+          window.location.href = 'searoute.html';
         }, 800);
       }
     }, 500);
@@ -333,7 +330,7 @@
     // Fungsi skip splash screen
     function skipSplash() {
       clearInterval(interval);
-      window.location.href = searoute.html'; // Ganti dengan nama file aplikasi utama Anda
+      window.location.href = 'searoute.html';
     }
 
     // Jika user menekan tombol apapun, bisa juga skip
@@ -342,9 +339,6 @@
         skipSplash();
       }
     });
-
-    // Klik di mana saja untuk skip (opsional)
-    // document.body.addEventListener('click', skipSplash);
   </script>
 
 </body>
