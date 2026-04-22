@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <title>Marine Router Indonesia · Kurva Halus</title>
+  <title>Marine Router Indonesia · Auto Ship Track</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, viewport-fit=cover" />
   <!-- Leaflet CSS & JS -->
@@ -283,6 +283,30 @@
       margin-top: 10px;
       color: #b65c00;
     }
+    
+    .auto-fetch-group {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+      align-items: center;
+    }
+    
+    .auto-fetch-group button {
+      flex: 1;
+      background: #d4eaf3;
+      border: none;
+      padding: 8px 0;
+      border-radius: 40px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      cursor: pointer;
+      color: #016076;
+      transition: 0.2s;
+    }
+    
+    .auto-fetch-group button:hover {
+      background: #bee0ef;
+    }
 
     button {
       font-family: inherit;
@@ -312,14 +336,17 @@
         <input type="text" id="shipName" placeholder="Nama Kapal" value="MV NUSANTARA">
         <input type="text" id="shipMMSI" placeholder="MMSI" value="525100123">
       </div>
-      <div class="flex-row">
+      <div class="auto-fetch-group">
+        <button id="fetchShipByMmsiBtn"><i class="fas fa-search"></i> Ambil dari ship.json (MMSI)</button>
+      </div>
+      <div class="flex-row" style="margin-top: 8px;">
         <input type="number" id="shipLength" placeholder="Panjang (m)" value="120" step="1">
         <input type="number" id="shipDraft" placeholder="Draft (m)" value="6.5" step="0.1">
       </div>
     </div>
 
     <div class="input-group">
-      <div class="input-label"><i class="fas fa-map-marker-alt"></i> TITIK AWAL</div>
+      <div class="input-label"><i class="fas fa-map-marker-alt"></i> TITIK AWAL (Start dari Kapal)</div>
       <div class="flex-row">
         <input type="text" id="startLat" placeholder="Latitude" value="">
         <input type="text" id="startLng" placeholder="Longitude" value="">
@@ -351,7 +378,7 @@
     </div>
     <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
     <div class="info-tip" id="infoBox">
-      <i class="fas fa-info-circle"></i> Rute kini ditampilkan sebagai kurva halus.
+      <i class="fas fa-info-circle"></i> Masukkan MMSI -> klik ambil data, start otomatis terisi.
     </div>
     <div class="warning-tip" id="reminderMsg">
       <i class="fas fa-exclamation-triangle"></i> Isi start & finish sebelum hitung rute
@@ -377,7 +404,7 @@
   }).addTo(map);
 
   // --------------------------------------------------------------
-  // GLOBAL STATE (logika sama, hanya garis akhir yang dikurva)
+  // GLOBAL STATE
   // --------------------------------------------------------------
   const WP_CONNECT_RADIUS = 3.0;
   const WP_K_NEAR         = 9;
@@ -398,6 +425,9 @@
   let animationInterval = null;
   let shipMarker = null;
   let currentAnimIndex = 0;
+  
+  // Data kapal dari JSON (opsional)
+  let shipDatabase = []; // menyimpan seluruh data ship.json
   
   // Helper geometri
   function dist(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
@@ -458,20 +488,16 @@
   function smoothCurve(coords, numPointsPerSegment = 30) {
     if (!coords || coords.length < 2) return coords;
     if (coords.length === 2) {
-      // Untuk 2 titik, buat interpolasi linear dengan kurva (bisa juga langsung)
       return coords;
     }
     
-    // Catmull-Rom Spline interpolation
     function catmullRom(p0, p1, p2, p3, t) {
       const t2 = t * t;
       const t3 = t2 * t;
-      
       const x = 0.5 * ((2 * p1[0]) +
                        (-p0[0] + p2[0]) * t +
                        (2*p0[0] - 5*p1[0] + 4*p2[0] - p3[0]) * t2 +
                        (-p0[0] + 3*p1[0] - 3*p2[0] + p3[0]) * t3);
-      
       const y = 0.5 * ((2 * p1[1]) +
                        (-p0[1] + p2[1]) * t +
                        (2*p0[1] - 5*p1[1] + 4*p2[1] - p3[1]) * t2 +
@@ -481,32 +507,23 @@
     
     const smoothed = [];
     const n = coords.length;
-    
-    // Tambahkan titik awal
     smoothed.push(coords[0]);
     
     for (let i = 0; i < n - 1; i++) {
-      // Ambil 4 titik kontrol (dengan handling ujung)
       const p0 = (i === 0) ? coords[0] : coords[i-1];
       const p1 = coords[i];
       const p2 = coords[i+1];
       const p3 = (i+2 < n) ? coords[i+2] : coords[i+1];
       
-      // Interpolasi antar p1 dan p2
       for (let step = 1; step <= numPointsPerSegment; step++) {
         const t = step / (numPointsPerSegment + 1);
         const point = catmullRom(p0, p1, p2, p3, t);
         smoothed.push(point);
       }
-      // Jangan duplikasi titik akhir segmen, akan ditambahkan sebagai awal segmen berikutnya
-      if (i < n-2) {
-        // Tidak perlu push p2, karena akan jadi p1 di iterasi selanjutnya
-      } else {
-        // segmen terakhir: tambahkan titik akhir
+      if (i < n-2) {} else {
         smoothed.push(coords[i+1]);
       }
     }
-    
     return smoothed;
   }
 
@@ -545,6 +562,80 @@
       tryBuildGraph();
     })
     .catch(() => setStatus("⚠️ waypoint.json gagal", "#e67e22"));
+  
+  // ** MEMUAT SHIP.JSON **
+  fetch('ship.json')
+    .then(r => r.json())
+    .then(data => {
+      if (data && data.data && Array.isArray(data.data)) {
+        shipDatabase = data.data;
+        setStatus(`🚢 ${shipDatabase.length} data kapal dimuat dari ship.json`, "#1f7e9e");
+        setInfo(`✔️ Database kapal siap. Masukkan MMSI & klik "Ambil dari ship.json"`);
+      } else {
+        console.warn("ship.json tidak memiliki struktur {data:[]}");
+        shipDatabase = [];
+        setInfo("⚠️ ship.json tidak ditemukan / format salah, auto-fetch tidak aktif");
+      }
+    })
+    .catch(err => {
+      console.error("Gagal load ship.json", err);
+      shipDatabase = [];
+      setInfo("⚠️ ship.json tidak tersedia, fitur ambil data kapal nonaktif");
+    });
+  
+  // Fungsi auto-fetch berdasarkan MMSI
+  function fetchShipByMMSI() {
+    const mmsiInput = document.getElementById('shipMMSI').value.trim();
+    if (!mmsiInput) {
+      alert("Masukkan MMSI terlebih dahulu!");
+      return;
+    }
+    if (!shipDatabase.length) {
+      alert("Data kapal (ship.json) belum dimuat atau kosong.");
+      return;
+    }
+    const found = shipDatabase.find(ship => ship.mmsi === mmsiInput);
+    if (!found) {
+      alert(`MMSI ${mmsiInput} tidak ditemukan dalam ship.json`);
+      return;
+    }
+    // Isi data nama kapal (jika ada property name? tapi dari struktur tidak ada name, kita bisa gunakan mmsi saja atau asumsi nama dari field lain? optional)
+    // Karena contoh ship.json hanya punya mmsi, class, navstatus, lon, lat dll.
+    // Kita update nama kapal dengan "Kapal MMSI: xxxx" atau bisa pakai class
+    let shipDisplayName = found.name || `Kapal ${found.mmsi}`;
+    if (!found.name && found.class) shipDisplayName = `${found.class}-Class ${found.mmsi}`;
+    document.getElementById('shipName').value = shipDisplayName;
+    
+    // Ambil koordinat start dari lon/lat
+    if (found.lon !== undefined && found.lat !== undefined) {
+      const startLat = found.lat;
+      const startLng = found.lon;
+      document.getElementById('startLat').value = startLat.toFixed(6);
+      document.getElementById('startLng').value = startLng.toFixed(6);
+      
+      // Terapkan start marker & global start
+      if (startMarker) map.removeLayer(startMarker);
+      start = [startLat, startLng];
+      startMarker = L.marker([startLat, startLng], { icon: L.divIcon({ html: `<i class="fas fa-anchor" style="font-size:28px; color:#1f7e9e;"></i>`, iconSize: [28,28], iconAnchor: [14,28] }) }).addTo(map).bindPopup("START (dari kapal)").openPopup();
+      
+      setStatus(`🛳️ Start otomatis dari kapal MMSI ${mmsiInput} (${startLat.toFixed(5)}, ${startLng.toFixed(5)})`, "#1f8a6b");
+      
+      // Hapus route sebelumnya
+      if (routeLine) { map.removeLayer(routeLine); routeLine = null; currentRouteCoords = []; }
+      if (shipMarker) map.removeLayer(shipMarker);
+      stopAnimation();
+    } else {
+      alert("Data kapal tidak memiliki koordinat lon/lat yang valid.");
+    }
+    
+    // Isi panjang dan draft jika ada (bisa ditambahkan nanti, asumsikan tidak ada, jadi tetap)
+    if (found.length) document.getElementById('shipLength').value = found.length;
+    if (found.draft) document.getElementById('shipDraft').value = found.draft;
+    
+    // Optional: jika ada 'port_origin' bisa ditampilkan di info
+    if (found.port_origin) setInfo(`Kapal dari pelabuhan: ${found.port_origin}. Start di posisi AIS.`);
+    else setInfo(`Start diatur ke posisi kapal (lon/lat dari ship.json)`);
+  }
   
   function tryBuildGraph() {
     if (!islandsReady || waypoints.length === 0 || (wpGraph && Object.keys(wpGraph).length > 0)) return;
@@ -662,7 +753,7 @@
     if (!pathIds || pathIds.length<2) {
       if(canSee(start, end, 45)) {
         const rawCoords = [start,end];
-        drawRouteAsCurve(rawCoords); // fungsi baru untuk kurva
+        drawRouteAsCurve(rawCoords);
         const km = distKm(start,end).toFixed(1);
         setStatus(`✅ Jalur Langsung (kurva): ${km} km`, "#2ecc71");
         setInfo("Rute LOS langsung dengan smoothing.");
@@ -683,20 +774,17 @@
     isRouting=false;
   }
   
-  // Fungsi baru: menggambar rute dengan kurva halus
   function drawRouteAsCurve(coords) {
-    currentRouteCoords = coords; // tetap simpan raw untuk animasi & perhitungan
-    const smoothed = smoothCurve(coords, 25); // 25 titik interpolasi per segmen
-    
+    currentRouteCoords = coords;
+    const smoothed = smoothCurve(coords, 25);
     if(routeLine) map.removeLayer(routeLine);
     routeLine = L.polyline(smoothed, { 
       color: '#1f85c7', 
       weight: 5, 
       opacity: 0.9, 
       lineJoin: 'round',
-      smoothFactor: 0  // kita sudah smoothing manual
+      smoothFactor: 0
     }).addTo(map);
-    
     map.fitBounds(routeLine.getBounds(), { padding: [50,50] });
   }
   
@@ -709,37 +797,10 @@
     const shipMMSI = document.getElementById('shipMMSI').value || "-";
     const shipLength = document.getElementById('shipLength').value || "?";
     const shipDraft = document.getElementById('shipDraft').value || "?";
-    
     return L.divIcon({
-      html: `
-        <div style="
-          background: #1a5276; 
-          border-radius: 20px; 
-          padding: 3px 10px; 
-          color: white; 
-          font-weight: 500; 
-          font-size: 9px; 
-          white-space: nowrap; 
-          box-shadow: 0 2px 6px rgba(0,0,0,0.3); 
-          border: 1px solid #f1c40f;
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          line-height: 1.2;
-        ">
-          <i class="fas fa-ship" style="font-size: 10px; margin-right: 2px;"></i>
-          <div style="display: flex; flex-direction: column;">
-            <span style="font-weight: 700; font-size: 8.5px;">${shipName.substring(0, 15)}</span>
-            <span style="font-size: 7px; opacity: 0.9; display: flex; gap: 6px;">
-              <span><i class="fas fa-id-card" style="font-size:6px;"></i> ${shipMMSI.substring(0,9)}</span>
-              <span>📏 ${shipLength}m</span>
-              <span>⚓ ${shipDraft}m</span>
-            </span>
-          </div>
-        </div>
-      `,
-      iconSize: [150, 36],
-      iconAnchor: [75, 18],
+      html: `<div style="background: #1a5276; border-radius: 20px; padding: 3px 10px; color: white; font-weight: 500; font-size: 9px; white-space: nowrap; box-shadow: 0 2px 6px rgba(0,0,0,0.3); border: 1px solid #f1c40f; display: flex; align-items: center; gap: 4px;"><i class="fas fa-ship" style="font-size: 10px;"></i><div><span style="font-weight:700;">${shipName.substring(0,15)}</span><br><span style="font-size:7px;">${shipMMSI} | ${shipLength}m | ${shipDraft}m</span></div></div>`,
+      iconSize: [150, 40],
+      iconAnchor: [75, 20],
       className: 'ship-label'
     });
   }
@@ -868,7 +929,6 @@
     if(e.target !== toggleNavBtn && !toggleNavBtn.contains(e.target)) toggleNavPanel(); 
   });
   
-  // initial icon
   toggleIconSpan.className = nav.classList.contains('collapsed') ? 'fas fa-chevron-down' : 'fas fa-chevron-up';
   
   // Event listeners
@@ -879,9 +939,10 @@
   document.getElementById('runRouteBtn').addEventListener('click', runRoute);
   document.getElementById('animateBtn').addEventListener('click', startAnimation);
   document.getElementById('clearAllBtn').addEventListener('click', clearAll);
+  document.getElementById('fetchShipByMmsiBtn').addEventListener('click', fetchShipByMMSI);
   
   window.addEventListener('load', ()=>{
-    setStatus("🌊 Rute Kurva Halus siap (Satelit).", "#2f9e6b");
+    setStatus("🌊 Rute Kurva Halus + Auto ship.json (MMSI)", "#2f9e6b");
   });
 </script>
 </body>
