@@ -362,14 +362,61 @@
       font-family: inherit;
     }
     
-    .port-select-row {
-      display: flex;
-      gap: 8px;
-      align-items: center;
+    /* Search Port Styles */
+    .search-port-container {
+      position: relative;
+      margin-bottom: 10px;
     }
     
-    .port-select-row select {
-      flex: 2;
+    .search-port-input {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid #d4e2ec;
+      border-radius: 48px;
+      font-size: 0.8rem;
+      background: white;
+    }
+    
+    .search-results {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: white;
+      border: 1px solid #d4e2ec;
+      border-radius: 16px;
+      max-height: 200px;
+      overflow-y: auto;
+      z-index: 1001;
+      display: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    
+    .search-result-item {
+      padding: 8px 14px;
+      cursor: pointer;
+      border-bottom: 1px solid #f0f0f0;
+      font-size: 0.75rem;
+      transition: background 0.2s;
+    }
+    
+    .search-result-item:hover {
+      background: #e6f3fa;
+    }
+    
+    .search-result-item:last-child {
+      border-bottom: none;
+    }
+    
+    .port-name {
+      font-weight: 600;
+      color: #016e8c;
+    }
+    
+    .port-coord {
+      font-size: 0.65rem;
+      color: #666;
+      margin-left: 8px;
     }
   </style>
 </head>
@@ -438,7 +485,14 @@
 
     <div class="input-group">
       <div class="input-label"><i class="fas fa-flag-checkered"></i> PELABUHAN TUJUAN</div>
-      <div class="port-select-row">
+      
+      <!-- SEARCH PORT -->
+      <div class="search-port-container">
+        <input type="text" id="searchPortInput" class="search-port-input" placeholder="🔍 Cari pelabuhan... (ketik nama)" autocomplete="off">
+        <div id="searchResults" class="search-results"></div>
+      </div>
+      
+      <div class="port-select-row" style="margin-top: 8px;">
         <select id="portSelect"></select>
         <button class="btn-icon" id="applyPortBtn"><i class="fas fa-check-circle"></i> Set Tujuan</button>
       </div>
@@ -458,7 +512,7 @@
     </div>
     <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
     <div class="info-tip" id="infoBox">
-      <i class="fas fa-info-circle"></i> Pilih pelabuhan dari daftar, lalu hitung rute.
+      <i class="fas fa-info-circle"></i> Ketik nama pelabuhan untuk mencari, atau pilih dari dropdown.
     </div>
     <div class="warning-tip" id="reminderMsg">
       <i class="fas fa-exclamation-triangle"></i> Pastikan start kapal sudah diisi (Ambil dari MMSI)
@@ -469,7 +523,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
   // --------------------------------------------------------------
-  // MAPTILER SATELLITE + KURVA BEZIER / SPLINE + LIVE TELEMETRY + PELABUHAN
+  // MAPTILER SATELLITE + KURVA BEZIER / SPLINE + LIVE TELEMETRY + PELABUHAN (Tersembunyi + SEARCH)
   // --------------------------------------------------------------
   const MAPTILER_API_KEY = 'mP5EMYL63473c6VT5cg6';
   
@@ -508,7 +562,7 @@
   let shipDatabase = [];
   let activeShipTelemetry = null;
   
-  let ports = []; // menyimpan data pelabuhan dari pelabuhan.json
+  let ports = []; // menyimpan data pelabuhan dari pelabuhan.json (TIDAK DITAMPILKAN DI PETA)
   
   // Helper geometri
   function dist(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
@@ -622,7 +676,7 @@
     })
     .catch(() => setStatus("⚠️ waypoint.json gagal", "#e67e22"));
   
-  // LOAD PELABUHAN.json
+  // LOAD PELABUHAN.json (DATA TERSEMBUNYI - TIDAK DITAMPILKAN MARKER)
   fetch('pelabuhan.json')
     .then(r => r.json())
     .then(data => {
@@ -641,12 +695,8 @@
           option.textContent = `${port.name} (${port.lat.toFixed(4)}, ${port.lng.toFixed(4)})`;
           select.appendChild(option);
         });
-        setStatus(`⚓ ${ports.length} pelabuhan dimuat dari pelabuhan.json`, "#1f7e9e");
-        setInfo(`Pilih pelabuhan tujuan dari dropdown.`);
-        // Tampilkan marker pelabuhan di peta
-        ports.forEach(port => {
-          L.marker([port.lat, port.lng], { icon: L.divIcon({ html: `<i class="fas fa-anchor" style="font-size:20px; color:#e67e22;"></i>`, iconSize: [20,20], className: 'port-marker' }) }).addTo(map).bindPopup(`⚓ ${port.name}`);
-        });
+        setStatus(`⚓ ${ports.length} pelabuhan dimuat (tersembunyi dari peta)`, "#1f7e9e");
+        setInfo(`Ketik nama pelabuhan untuk mencari, atau pilih dari dropdown.`);
       } else {
         console.warn("pelabuhan.json tidak memiliki format FeatureCollection");
         setInfo("⚠️ pelabuhan.json format tidak sesuai, tidak ada data pelabuhan.");
@@ -666,6 +716,59 @@
       }
     })
     .catch(err => { console.error("Gagal load ship.json", err); shipDatabase = []; });
+  
+  // SEARCH FUNCTION
+  function searchPorts(query) {
+    if (!query || query.trim() === '') return [];
+    const lowerQuery = query.toLowerCase();
+    return ports.filter(port => 
+      port.name.toLowerCase().includes(lowerQuery)
+    ).slice(0, 10); // max 10 results
+  }
+  
+  function displaySearchResults(results) {
+    const container = document.getElementById('searchResults');
+    if (!results.length) {
+      container.style.display = 'none';
+      return;
+    }
+    container.innerHTML = '';
+    results.forEach(port => {
+      const div = document.createElement('div');
+      div.className = 'search-result-item';
+      div.innerHTML = `<span class="port-name">⚓ ${port.name}</span><span class="port-coord">${port.lat.toFixed(4)}, ${port.lng.toFixed(4)}</span>`;
+      div.onclick = () => selectPortFromSearch(port);
+      container.appendChild(div);
+    });
+    container.style.display = 'block';
+  }
+  
+  function selectPortFromSearch(port) {
+    // Find index in ports array
+    const idx = ports.findIndex(p => p.name === port.name && p.lat === port.lat && p.lng === port.lng);
+    if (idx !== -1) {
+      document.getElementById('portSelect').value = idx;
+      setPortDestination();
+    }
+    // Hide search results
+    document.getElementById('searchResults').style.display = 'none';
+    document.getElementById('searchPortInput').value = port.name;
+  }
+  
+  // Search input event
+  const searchInput = document.getElementById('searchPortInput');
+  searchInput.addEventListener('input', (e) => {
+    const query = e.target.value;
+    const results = searchPorts(query);
+    displaySearchResults(results);
+  });
+  
+  // Hide search results when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!searchInput.contains(e.target) && !document.getElementById('searchResults').contains(e.target)) {
+      document.getElementById('searchResults').style.display = 'none';
+    }
+  });
   
   function updateTelemetryUI(shipData) {
     if (!shipData) return;
@@ -718,7 +821,7 @@
     showTelemetryPanel(true);
   }
   
-  // Set tujuan dari pelabuhan yang dipilih
+  // Set tujuan dari pelabuhan yang dipilih (pelabuhan tersembunyi)
   function setPortDestination() {
     const select = document.getElementById('portSelect');
     const idx = select.value;
@@ -731,6 +834,7 @@
     document.getElementById('endLat').value = port.lat.toFixed(6);
     document.getElementById('endLng').value = port.lng.toFixed(6);
     if (endMarker) map.removeLayer(endMarker);
+    // Tampilkan marker tujuan dengan icon bendera (ini tetap ditampilkan karena sebagai tujuan)
     endMarker = L.marker([port.lat, port.lng], { icon: L.divIcon({ html: `<i class="fas fa-flag-checkered" style="font-size:28px; color:#d97706;"></i>`, iconSize: [28,28], iconAnchor: [14,28] }) }).addTo(map).bindPopup(`🎯 TUJUAN: ${port.name}`).openPopup();
     setStatus(`🏁 Tujuan ditetapkan: ${port.name} (${port.lat.toFixed(4)}, ${port.lng.toFixed(4)})`, "#d97706");
     if (routeLine) { map.removeLayer(routeLine); routeLine = null; currentRouteCoords = []; stopAnimation(); if(shipMarker) map.removeLayer(shipMarker); }
@@ -970,8 +1074,9 @@
     document.getElementById('endLat').value='';
     document.getElementById('endLng').value='';
     document.getElementById('portSelect').value='';
+    document.getElementById('searchPortInput').value='';
     setStatus("Reset total.","#447799");
-    setInfo("Data dihapus. Pilih pelabuhan dan ambil data kapal.");
+    setInfo("Data dihapus. Cari pelabuhan dan ambil data kapal.");
     showTelemetryPanel(false);
   }
   
@@ -1015,7 +1120,7 @@
   document.getElementById('pickStartMapBtn').addEventListener('click', ()=>setModeSelection('start'));
   
   window.addEventListener('load', ()=>{
-    setStatus("🌊 Rute ke Pelabuhan + Telemetri AIS", "#2f9e6b");
+    setStatus("🌊 Cari pelabuhan tujuan + Telemetri AIS", "#2f9e6b");
   });
 </script>
 </body>
