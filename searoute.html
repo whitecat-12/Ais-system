@@ -365,7 +365,7 @@
     /* Search Port Styles */
     .search-port-container {
       position: relative;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
     }
     
     .search-port-input {
@@ -374,7 +374,15 @@
       border: 1px solid #d4e2ec;
       border-radius: 48px;
       font-size: 0.8rem;
-      background: white;
+      background: #ffffff;
+      color: #144f68;
+      transition: 0.2s;
+    }
+    
+    .search-port-input:focus {
+      outline: none;
+      border-color: #249bc7;
+      box-shadow: 0 0 0 2px rgba(36, 155, 199, 0.1);
     }
     
     .search-results {
@@ -383,17 +391,17 @@
       left: 0;
       right: 0;
       background: white;
-      border: 1px solid #d4e2ec;
       border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
       max-height: 200px;
       overflow-y: auto;
       z-index: 1001;
       display: none;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      border: 1px solid #d4e2ec;
     }
     
     .search-result-item {
-      padding: 8px 14px;
+      padding: 10px 14px;
       cursor: pointer;
       border-bottom: 1px solid #f0f0f0;
       font-size: 0.75rem;
@@ -401,22 +409,33 @@
     }
     
     .search-result-item:hover {
-      background: #e6f3fa;
+      background: #e8f4fc;
     }
     
     .search-result-item:last-child {
       border-bottom: none;
     }
     
-    .port-name {
+    .result-name {
       font-weight: 600;
       color: #016e8c;
     }
     
-    .port-coord {
+    .result-coord {
       font-size: 0.65rem;
-      color: #666;
-      margin-left: 8px;
+      color: #6c8d9e;
+      margin-top: 2px;
+    }
+    
+    .selected-port-info {
+      background: #e8f4fc;
+      border-radius: 24px;
+      padding: 8px 12px;
+      margin-top: 8px;
+      font-size: 0.7rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
   </style>
 </head>
@@ -424,7 +443,7 @@
 
 <div id="map"></div>
 
-<!-- NAVBAR MINIMALIS dengan TELEMETRI & PELABUHAN -->
+<!-- NAVBAR dengan SEARCH PORT -->
 <div class="marine-nav collapsed" id="marineNav">
   <div class="nav-header" id="navHeader">
     <div class="brand">
@@ -484,23 +503,20 @@
     </div>
 
     <div class="input-group">
-      <div class="input-label"><i class="fas fa-flag-checkered"></i> PELABUHAN TUJUAN</div>
-      
-      <!-- SEARCH PORT -->
+      <div class="input-label"><i class="fas fa-flag-checkered"></i> PELABUHAN TUJUAN <i class="fas fa-search" style="font-size:0.65rem;"></i></div>
       <div class="search-port-container">
-        <input type="text" id="searchPortInput" class="search-port-input" placeholder="🔍 Cari pelabuhan... (ketik nama)" autocomplete="off">
+        <input type="text" id="searchPortInput" class="search-port-input" placeholder="Cari pelabuhan... (ketik nama)" autocomplete="off">
         <div id="searchResults" class="search-results"></div>
       </div>
-      
-      <div class="port-select-row" style="margin-top: 8px;">
-        <select id="portSelect"></select>
-        <button class="btn-icon" id="applyPortBtn"><i class="fas fa-check-circle"></i> Set Tujuan</button>
+      <div id="selectedPortDisplay" style="display: none;" class="selected-port-info">
+        <span><i class="fas fa-check-circle" style="color:#27ae60;"></i> <span id="selectedPortName"></span></span>
+        <button id="clearPortBtn" style="background:none; border:none; color:#e74c3c; cursor:pointer;"><i class="fas fa-times"></i></button>
       </div>
       <div class="flex-row" style="margin-top: 8px;">
         <input type="text" id="endLat" placeholder="Latitude Tujuan" value="" readonly>
         <input type="text" id="endLng" placeholder="Longitude Tujuan" value="" readonly>
       </div>
-      <button class="btn-icon" id="pickEndMapBtn" style="width:100%; justify-content:center;"><i class="fas fa-hand-pointer"></i> Pilih Tujuan di Peta (Manual)</button>
+      <button class="btn-icon" id="pickEndMapBtn" style="width:100%; justify-content:center; margin-top:8px;"><i class="fas fa-hand-pointer"></i> Pilih Tujuan di Peta (Manual)</button>
     </div>
 
     <button class="btn-primary-solid" id="runRouteBtn"><i class="fas fa-route"></i> GENERATE RUTE KE PELABUHAN</button>
@@ -512,7 +528,7 @@
     </div>
     <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
     <div class="info-tip" id="infoBox">
-      <i class="fas fa-info-circle"></i> Ketik nama pelabuhan untuk mencari, atau pilih dari dropdown.
+      <i class="fas fa-info-circle"></i> Cari pelabuhan dengan mengetik nama, lalu klik hasil pencarian.
     </div>
     <div class="warning-tip" id="reminderMsg">
       <i class="fas fa-exclamation-triangle"></i> Pastikan start kapal sudah diisi (Ambil dari MMSI)
@@ -523,7 +539,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
   // --------------------------------------------------------------
-  // MAPTILER SATELLITE + KURVA BEZIER / SPLINE + LIVE TELEMETRY + PELABUHAN (Tersembunyi + SEARCH)
+  // MAPTILER SATELLITE + KURVA BEZIER / SPLINE + LIVE TELEMETRY + SEARCH PORT
   // --------------------------------------------------------------
   const MAPTILER_API_KEY = 'mP5EMYL63473c6VT5cg6';
   
@@ -561,8 +577,7 @@
   
   let shipDatabase = [];
   let activeShipTelemetry = null;
-  
-  let ports = []; // menyimpan data pelabuhan dari pelabuhan.json (TIDAK DITAMPILKAN DI PETA)
+  let ports = [];
   
   // Helper geometri
   function dist(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
@@ -676,7 +691,7 @@
     })
     .catch(() => setStatus("⚠️ waypoint.json gagal", "#e67e22"));
   
-  // LOAD PELABUHAN.json (DATA TERSEMBUNYI - TIDAK DITAMPILKAN MARKER)
+  // LOAD PELABUHAN.json dengan fitur SEARCH
   fetch('pelabuhan.json')
     .then(r => r.json())
     .then(data => {
@@ -687,22 +702,103 @@
           lng: f.geometry.coordinates[0],
           osm_id: f.properties?.osm_id
         }));
-        const select = document.getElementById('portSelect');
-        select.innerHTML = '<option value="">-- Pilih Pelabuhan Tujuan --</option>';
-        ports.forEach((port, idx) => {
-          const option = document.createElement('option');
-          option.value = idx;
-          option.textContent = `${port.name} (${port.lat.toFixed(4)}, ${port.lng.toFixed(4)})`;
-          select.appendChild(option);
-        });
-        setStatus(`⚓ ${ports.length} pelabuhan dimuat (tersembunyi dari peta)`, "#1f7e9e");
-        setInfo(`Ketik nama pelabuhan untuk mencari, atau pilih dari dropdown.`);
+        setStatus(`⚓ ${ports.length} pelabuhan dimuat - Gunakan pencarian`, "#1f7e9e");
+        setInfo(`Ketik nama pelabuhan di kotak pencarian.`);
+        
+        // Setup search functionality
+        setupPortSearch();
       } else {
         console.warn("pelabuhan.json tidak memiliki format FeatureCollection");
         setInfo("⚠️ pelabuhan.json format tidak sesuai, tidak ada data pelabuhan.");
       }
     })
     .catch(err => { console.error("Gagal load pelabuhan.json", err); setInfo("⚠️ pelabuhan.json tidak ditemukan, gunakan koordinat manual"); });
+  
+  function setupPortSearch() {
+    const searchInput = document.getElementById('searchPortInput');
+    const resultsDiv = document.getElementById('searchResults');
+    
+    searchInput.addEventListener('input', function() {
+      const query = this.value.toLowerCase().trim();
+      if (query.length < 2) {
+        resultsDiv.style.display = 'none';
+        return;
+      }
+      
+      const filtered = ports.filter(port => 
+        port.name.toLowerCase().includes(query)
+      ).slice(0, 10);
+      
+      if (filtered.length === 0) {
+        resultsDiv.style.display = 'none';
+        return;
+      }
+      
+      resultsDiv.innerHTML = filtered.map(port => `
+        <div class="search-result-item" data-lat="${port.lat}" data-lng="${port.lng}" data-name="${port.name.replace(/"/g, '&quot;')}">
+          <div class="result-name">${port.name}</div>
+          <div class="result-coord">${port.lat.toFixed(4)}°, ${port.lng.toFixed(4)}°</div>
+        </div>
+      `).join('');
+      
+      resultsDiv.style.display = 'block';
+      
+      document.querySelectorAll('.search-result-item').forEach(el => {
+        el.addEventListener('click', function() {
+          const lat = parseFloat(this.dataset.lat);
+          const lng = parseFloat(this.dataset.lng);
+          const name = this.dataset.name;
+          selectPort(lat, lng, name);
+          resultsDiv.style.display = 'none';
+          searchInput.value = name;
+        });
+      });
+    });
+    
+    document.addEventListener('click', function(e) {
+      if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
+        resultsDiv.style.display = 'none';
+      }
+    });
+  }
+  
+  function selectPort(lat, lng, name) {
+    end = [lat, lng];
+    document.getElementById('endLat').value = lat.toFixed(6);
+    document.getElementById('endLng').value = lng.toFixed(6);
+    
+    if (endMarker) map.removeLayer(endMarker);
+    endMarker = L.marker([lat, lng], { 
+      icon: L.divIcon({ 
+        html: `<i class="fas fa-flag-checkered" style="font-size:28px; color:#d97706;"></i>`, 
+        iconSize: [28,28], 
+        iconAnchor: [14,28] 
+      }) 
+    }).addTo(map).bindPopup(`🎯 TUJUAN: ${name}`).openPopup();
+    
+    document.getElementById('selectedPortName').innerHTML = `<i class="fas fa-ship"></i> ${name} (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+    document.getElementById('selectedPortDisplay').style.display = 'flex';
+    
+    setStatus(`🏁 Tujuan ditetapkan: ${name}`, "#d97706");
+    
+    if (routeLine) { 
+      map.removeLayer(routeLine); 
+      routeLine = null; 
+      currentRouteCoords = []; 
+      stopAnimation(); 
+      if(shipMarker) map.removeLayer(shipMarker); 
+    }
+  }
+  
+  document.getElementById('clearPortBtn')?.addEventListener('click', function() {
+    end = null;
+    document.getElementById('endLat').value = '';
+    document.getElementById('endLng').value = '';
+    document.getElementById('selectedPortDisplay').style.display = 'none';
+    document.getElementById('searchPortInput').value = '';
+    if (endMarker) map.removeLayer(endMarker);
+    setStatus("Tujuan dibatalkan", "#447799");
+  });
   
   fetch('ship.json')
     .then(r => r.json())
@@ -716,59 +812,6 @@
       }
     })
     .catch(err => { console.error("Gagal load ship.json", err); shipDatabase = []; });
-  
-  // SEARCH FUNCTION
-  function searchPorts(query) {
-    if (!query || query.trim() === '') return [];
-    const lowerQuery = query.toLowerCase();
-    return ports.filter(port => 
-      port.name.toLowerCase().includes(lowerQuery)
-    ).slice(0, 10); // max 10 results
-  }
-  
-  function displaySearchResults(results) {
-    const container = document.getElementById('searchResults');
-    if (!results.length) {
-      container.style.display = 'none';
-      return;
-    }
-    container.innerHTML = '';
-    results.forEach(port => {
-      const div = document.createElement('div');
-      div.className = 'search-result-item';
-      div.innerHTML = `<span class="port-name">⚓ ${port.name}</span><span class="port-coord">${port.lat.toFixed(4)}, ${port.lng.toFixed(4)}</span>`;
-      div.onclick = () => selectPortFromSearch(port);
-      container.appendChild(div);
-    });
-    container.style.display = 'block';
-  }
-  
-  function selectPortFromSearch(port) {
-    // Find index in ports array
-    const idx = ports.findIndex(p => p.name === port.name && p.lat === port.lat && p.lng === port.lng);
-    if (idx !== -1) {
-      document.getElementById('portSelect').value = idx;
-      setPortDestination();
-    }
-    // Hide search results
-    document.getElementById('searchResults').style.display = 'none';
-    document.getElementById('searchPortInput').value = port.name;
-  }
-  
-  // Search input event
-  const searchInput = document.getElementById('searchPortInput');
-  searchInput.addEventListener('input', (e) => {
-    const query = e.target.value;
-    const results = searchPorts(query);
-    displaySearchResults(results);
-  });
-  
-  // Hide search results when clicking outside
-  document.addEventListener('click', (e) => {
-    if (!searchInput.contains(e.target) && !document.getElementById('searchResults').contains(e.target)) {
-      document.getElementById('searchResults').style.display = 'none';
-    }
-  });
   
   function updateTelemetryUI(shipData) {
     if (!shipData) return;
@@ -819,25 +862,6 @@
     if (found.draft) document.getElementById('shipDraft').value = found.draft;
     updateTelemetryUI(found);
     showTelemetryPanel(true);
-  }
-  
-  // Set tujuan dari pelabuhan yang dipilih (pelabuhan tersembunyi)
-  function setPortDestination() {
-    const select = document.getElementById('portSelect');
-    const idx = select.value;
-    if (idx === "" || !ports[parseInt(idx)]) {
-      alert("Pilih pelabuhan terlebih dahulu!");
-      return;
-    }
-    const port = ports[parseInt(idx)];
-    end = [port.lat, port.lng];
-    document.getElementById('endLat').value = port.lat.toFixed(6);
-    document.getElementById('endLng').value = port.lng.toFixed(6);
-    if (endMarker) map.removeLayer(endMarker);
-    // Tampilkan marker tujuan dengan icon bendera (ini tetap ditampilkan karena sebagai tujuan)
-    endMarker = L.marker([port.lat, port.lng], { icon: L.divIcon({ html: `<i class="fas fa-flag-checkered" style="font-size:28px; color:#d97706;"></i>`, iconSize: [28,28], iconAnchor: [14,28] }) }).addTo(map).bindPopup(`🎯 TUJUAN: ${port.name}`).openPopup();
-    setStatus(`🏁 Tujuan ditetapkan: ${port.name} (${port.lat.toFixed(4)}, ${port.lng.toFixed(4)})`, "#d97706");
-    if (routeLine) { map.removeLayer(routeLine); routeLine = null; currentRouteCoords = []; stopAnimation(); if(shipMarker) map.removeLayer(shipMarker); }
   }
   
   function tryBuildGraph() {
@@ -1073,10 +1097,10 @@
     document.getElementById('startLng').value='';
     document.getElementById('endLat').value='';
     document.getElementById('endLng').value='';
-    document.getElementById('portSelect').value='';
     document.getElementById('searchPortInput').value='';
+    document.getElementById('selectedPortDisplay').style.display = 'none';
     setStatus("Reset total.","#447799");
-    setInfo("Data dihapus. Cari pelabuhan dan ambil data kapal.");
+    setInfo("Ketik nama pelabuhan untuk mencari tujuan.");
     showTelemetryPanel(false);
   }
   
@@ -1095,6 +1119,8 @@
       updateEndMarker(lat,lng);
       document.getElementById('endLat').value=lat.toFixed(6);
       document.getElementById('endLng').value=lng.toFixed(6);
+      document.getElementById('selectedPortDisplay').style.display = 'none';
+      document.getElementById('searchPortInput').value = '';
       setStatus(`🏁 Finish dari peta: ${lat.toFixed(5)}, ${lng.toFixed(5)}`,"#667fa0");
     }
     if(routeLine){ map.removeLayer(routeLine); routeLine=null; currentRouteCoords=[]; stopAnimation(); if(shipMarker) map.removeLayer(shipMarker); }
@@ -1111,7 +1137,6 @@
   toggleIconSpan.className = nav.classList.contains('collapsed') ? 'fas fa-chevron-down' : 'fas fa-chevron-up';
   
   document.getElementById('applyStartBtn').addEventListener('click', applyStartFromInput);
-  document.getElementById('applyPortBtn').addEventListener('click', setPortDestination);
   document.getElementById('pickEndMapBtn').addEventListener('click', ()=>setModeSelection('end'));
   document.getElementById('runRouteBtn').addEventListener('click', runRoute);
   document.getElementById('animateBtn').addEventListener('click', startAnimation);
@@ -1120,7 +1145,7 @@
   document.getElementById('pickStartMapBtn').addEventListener('click', ()=>setModeSelection('start'));
   
   window.addEventListener('load', ()=>{
-    setStatus("🌊 Cari pelabuhan tujuan + Telemetri AIS", "#2f9e6b");
+    setStatus("🌊 Cari pelabuhan tujuan dengan mengetik nama", "#2f9e6b");
   });
 </script>
 </body>
