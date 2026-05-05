@@ -40,7 +40,7 @@
       top: 16px;
       left: 16px;
       right: 16px;
-      max-width: 400px;
+      max-width: 420px;
       max-height: calc(100vh - 32px);
       background: rgba(255, 255, 255, 0.98);
       backdrop-filter: blur(12px);
@@ -137,6 +137,39 @@
 
     .marine-nav.collapsed .nav-content {
       display: none;
+    }
+
+    .mode-bar {
+      background: #e8f0f5;
+      border-radius: 40px;
+      padding: 6px;
+      margin-bottom: 16px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .mode-btn {
+      flex: 1;
+      text-align: center;
+      padding: 8px 0;
+      border-radius: 32px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      cursor: pointer;
+      background: transparent;
+      border: none;
+      color: #3e7e9e;
+      transition: 0.2s;
+    }
+
+    .mode-btn.active {
+      background: #1f7e9e;
+      color: white;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+
+    .mode-btn i {
+      margin-right: 6px;
     }
 
     .input-group {
@@ -362,7 +395,6 @@
       font-family: inherit;
     }
     
-    /* Search Port Styles */
     .search-port-container {
       position: relative;
       margin-bottom: 8px;
@@ -443,7 +475,6 @@
 
 <div id="map"></div>
 
-<!-- NAVBAR dengan SEARCH PORT -->
 <div class="marine-nav collapsed" id="marineNav">
   <div class="nav-header" id="navHeader">
     <div class="brand">
@@ -456,6 +487,12 @@
     </div>
   </div>
   <div class="nav-content">
+    <!-- MODE SELECTOR -->
+    <div class="mode-bar">
+      <button class="mode-btn" id="modeBigruBtn"><i class="fas fa-database"></i> BIGRU</button>
+      <button class="mode-btn" id="modeBiltsmBtn"><i class="fas fa-globe"></i> BILTSM</button>
+    </div>
+
     <div class="input-group">
       <div class="input-label"><i class="fas fa-fish"></i> DATA KAPAL (AIS)</div>
       <div class="flex-row">
@@ -471,7 +508,6 @@
       </div>
     </div>
 
-    <!-- LIVE TELEMETRY SECTION -->
     <div id="liveTelemetryPanel" style="display: none;" class="telemetry-card">
       <div class="telemetry-title">
         <span><i class="fas fa-satellite-dish"></i> AIS TELEMETRY</span>
@@ -528,7 +564,7 @@
     </div>
     <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
     <div class="info-tip" id="infoBox">
-      <i class="fas fa-info-circle"></i> Cari pelabuhan dengan mengetik nama, lalu klik hasil pencarian.
+      <i class="fas fa-info-circle"></i> Pilih mode BIGRU (waypoint2.json) atau BILTSM (lengkap)
     </div>
     <div class="warning-tip" id="reminderMsg">
       <i class="fas fa-exclamation-triangle"></i> Pastikan start kapal sudah diisi (Ambil dari MMSI)
@@ -538,37 +574,34 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-  // --------------------------------------------------------------
-  // MAPTILER SATELLITE + KURVA BEZIER / SPLINE + LIVE TELEMETRY + SEARCH PORT
-  // --------------------------------------------------------------
+  // ===============================================================
+  // MARINE ROUTER dengan MODE: BIGRU (waypoint2.json) dan BILTSM (lengkap)
+  // ===============================================================
   const MAPTILER_API_KEY = 'mP5EMYL63473c6VT5cg6';
-  
   const map = L.map('map', { zoomControl: false }).setView([-2.5, 118], 5);
-  
   L.tileLayer(`https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}.jpg?key=${MAPTILER_API_KEY}`, {
-    attribution: '&copy; <a href="https://www.maptiler.com/copyright/" target="_blank">MapTiler</a> contributors',
+    attribution: '',
     maxZoom: 20,
     tileSize: 512,
     zoomOffset: -1,
     crossOrigin: true
   }).addTo(map);
 
-  // --------------------------------------------------------------
   // GLOBAL STATE
-  // --------------------------------------------------------------
   const WP_CONNECT_RADIUS = 3.0;
-  const WP_K_NEAR         = 9;
-  const MAX_ITER          = 220000;
+  const WP_K_NEAR = 9;
+  const MAX_ITER = 250000;
   
-  let islands   = [];
+  let islands = [];
   let waypoints = [];
-  let wpGraph   = {};
-  let wpReady   = false;
-  let islandsReady = false;
+  let wpGraph = {};
+  let wpReady = false;
+  let islandPolygons = [];
+  let currentMode = "BIGRU"; // BIGRU atau BILTSM
   
   let start = null;
-  let end   = null;
-  let mode  = null;
+  let end = null;
+  let mode = null;
   let routeLine, startMarker, endMarker;
   let isRouting = false;
   let currentRouteCoords = [];
@@ -578,8 +611,8 @@
   let shipDatabase = [];
   let activeShipTelemetry = null;
   let ports = [];
-  
-  // Helper geometri
+
+  // Helper functions
   function dist(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
   function distKm(a, b) {
     const R = 6371;
@@ -662,214 +695,92 @@
     return smoothed;
   }
 
-  // LOAD islands & waypoints
-  fetch('islands.json')
-    .then(r => r.json())
-    .then(data => {
-      islands = data.islands || [];
-      for (const isl of islands) {
-        if (!isl.polygon || isl.polygon.length < 3) { isl.skip = true; continue; }
-        if (isl.polygon[0] !== isl.polygon[isl.polygon.length-1])
-          isl.polygon.push(isl.polygon[0]);
-        const lats = isl.polygon.map(p=>p[0]);
-        const lngs = isl.polygon.map(p=>p[1]);
-        isl.bbox = { minLat: Math.min(...lats)-0.02, maxLat: Math.max(...lats)+0.02, minLng: Math.min(...lngs)-0.02, maxLng: Math.max(...lngs)+0.02 };
-        L.polygon(isl.polygon, { color:'#e67e22', weight:1.2, fillOpacity:0.15, fillColor:'#c0392b', interactive:false }).addTo(map);
-      }
-      islandsReady = true;
-      tryBuildGraph();
-      setStatus("✅ Pulau & batasan siap", "#2c7a4d");
-    })
-    .catch(() => { islandsReady = true; tryBuildGraph(); setStatus("⚠️ islands.json tidak ada → asumsi laut bebas", "#f39c12"); });
-  
-  fetch('waypoint.json')
-    .then(r => r.json())
-    .then(data => {
-      waypoints = (data.waypoints || data || []).filter(w => w.lat && w.lng);
-      setStatus(`📍 ${waypoints.length} waypoint laut dimuat`, "#2f7f5f");
-      tryBuildGraph();
-    })
-    .catch(() => setStatus("⚠️ waypoint.json gagal", "#e67e22"));
-  
-  // LOAD PELABUHAN.json dengan fitur SEARCH
-  fetch('pelabuhan.json')
-    .then(r => r.json())
-    .then(data => {
-      if (data && data.features && Array.isArray(data.features)) {
-        ports = data.features.filter(f => f.geometry && f.geometry.coordinates).map(f => ({
-          name: f.properties?.name || f.properties['name:id'] || f.properties['name:en'] || `Pelabuhan ${f.properties?.osm_id || ''}`,
-          lat: f.geometry.coordinates[1],
-          lng: f.geometry.coordinates[0],
-          osm_id: f.properties?.osm_id
-        }));
-        setStatus(`⚓ ${ports.length} pelabuhan dimuat - Gunakan pencarian`, "#1f7e9e");
-        setInfo(`Ketik nama pelabuhan di kotak pencarian.`);
-        
-        // Setup search functionality
-        setupPortSearch();
-      } else {
-        console.warn("pelabuhan.json tidak memiliki format FeatureCollection");
-        setInfo("⚠️ pelabuhan.json format tidak sesuai, tidak ada data pelabuhan.");
-      }
-    })
-    .catch(err => { console.error("Gagal load pelabuhan.json", err); setInfo("⚠️ pelabuhan.json tidak ditemukan, gunakan koordinat manual"); });
-  
-  function setupPortSearch() {
-    const searchInput = document.getElementById('searchPortInput');
-    const resultsDiv = document.getElementById('searchResults');
-    
-    searchInput.addEventListener('input', function() {
-      const query = this.value.toLowerCase().trim();
-      if (query.length < 2) {
-        resultsDiv.style.display = 'none';
-        return;
-      }
-      
-      const filtered = ports.filter(port => 
-        port.name.toLowerCase().includes(query)
-      ).slice(0, 10);
-      
-      if (filtered.length === 0) {
-        resultsDiv.style.display = 'none';
-        return;
-      }
-      
-      resultsDiv.innerHTML = filtered.map(port => `
-        <div class="search-result-item" data-lat="${port.lat}" data-lng="${port.lng}" data-name="${port.name.replace(/"/g, '&quot;')}">
-          <div class="result-name">${port.name}</div>
-          <div class="result-coord">${port.lat.toFixed(4)}°, ${port.lng.toFixed(4)}°</div>
-        </div>
-      `).join('');
-      
-      resultsDiv.style.display = 'block';
-      
-      document.querySelectorAll('.search-result-item').forEach(el => {
-        el.addEventListener('click', function() {
-          const lat = parseFloat(this.dataset.lat);
-          const lng = parseFloat(this.dataset.lng);
-          const name = this.dataset.name;
-          selectPort(lat, lng, name);
-          resultsDiv.style.display = 'none';
-          searchInput.value = name;
-        });
-      });
-    });
-    
-    document.addEventListener('click', function(e) {
-      if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
-        resultsDiv.style.display = 'none';
-      }
-    });
+  // Clear existing island polygons
+  function clearIslandPolygons() {
+    islandPolygons.forEach(poly => map.removeLayer(poly));
+    islandPolygons = [];
   }
-  
-  function selectPort(lat, lng, name) {
-    end = [lat, lng];
-    document.getElementById('endLat').value = lat.toFixed(6);
-    document.getElementById('endLng').value = lng.toFixed(6);
+
+  // Load data berdasarkan mode
+  async function loadMode(modeName) {
+    currentMode = modeName;
+    setStatus(`🔄 Memuat mode ${modeName}...`, "#f39c12");
     
+    // Reset
+    islands = [];
+    waypoints = [];
+    wpGraph = {};
+    wpReady = false;
+    clearIslandPolygons();
+    if (routeLine) map.removeLayer(routeLine);
+    if (startMarker) map.removeLayer(startMarker);
     if (endMarker) map.removeLayer(endMarker);
-    endMarker = L.marker([lat, lng], { 
-      icon: L.divIcon({ 
-        html: `<i class="fas fa-flag-checkered" style="font-size:28px; color:#d97706;"></i>`, 
-        iconSize: [28,28], 
-        iconAnchor: [14,28] 
-      }) 
-    }).addTo(map).bindPopup(`🎯 TUJUAN: ${name}`).openPopup();
+    routeLine = startMarker = endMarker = null;
+    start = end = null;
+    currentRouteCoords = [];
+    stopAnimation();
+    if(shipMarker) map.removeLayer(shipMarker);
     
-    document.getElementById('selectedPortName').innerHTML = `<i class="fas fa-ship"></i> ${name} (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
-    document.getElementById('selectedPortDisplay').style.display = 'flex';
-    
-    setStatus(`🏁 Tujuan ditetapkan: ${name}`, "#d97706");
-    
-    if (routeLine) { 
-      map.removeLayer(routeLine); 
-      routeLine = null; 
-      currentRouteCoords = []; 
-      stopAnimation(); 
-      if(shipMarker) map.removeLayer(shipMarker); 
+    try {
+      let wpFile = modeName === "BIGRU" ? 'waypoint2.json' : 'waypoint.json';
+      const wpRes = await fetch(wpFile);
+      const wpData = await wpRes.json();
+      waypoints = (wpData.waypoints || wpData || []).filter(w => w.lat && w.lng);
+      setStatus(`📍 ${waypoints.length} waypoint dimuat (${modeName})`, "#2f7f5f");
+    } catch(e) { 
+      setStatus(`⚠️ Gagal muat ${modeName === "BIGRU" ? 'waypoint2.json' : 'waypoint.json'}`, "#e67e22");
+      waypoints = [];
     }
-  }
-  
-  document.getElementById('clearPortBtn')?.addEventListener('click', function() {
-    end = null;
-    document.getElementById('endLat').value = '';
-    document.getElementById('endLng').value = '';
-    document.getElementById('selectedPortDisplay').style.display = 'none';
-    document.getElementById('searchPortInput').value = '';
-    if (endMarker) map.removeLayer(endMarker);
-    setStatus("Tujuan dibatalkan", "#447799");
-  });
-  
-  fetch('ship.json')
-    .then(r => r.json())
-    .then(data => {
-      if (data && data.data && Array.isArray(data.data)) {
-        shipDatabase = data.data;
-        setStatus(`🚢 ${shipDatabase.length} data kapal dimuat`, "#1f7e9e");
-      } else {
-        shipDatabase = [];
-        setInfo("⚠️ ship.json tidak ditemukan / format salah");
-      }
-    })
-    .catch(err => { console.error("Gagal load ship.json", err); shipDatabase = []; });
-  
-  function updateTelemetryUI(shipData) {
-    if (!shipData) return;
-    document.getElementById('liveSog').innerText = (shipData.sog !== undefined ? shipData.sog : 0).toFixed(1);
-    document.getElementById('liveCog').innerText = (shipData.cog !== undefined ? shipData.cog : '---');
-    document.getElementById('liveHdg').innerText = (shipData.hdg !== undefined ? shipData.hdg : '---');
-    document.getElementById('liveUtc').innerText = (shipData.utc !== undefined ? shipData.utc : '--');
-    document.getElementById('liveClass').innerText = shipData.class || 'A';
-    document.getElementById('liveRot').innerText = (shipData.rot !== undefined ? shipData.rot : 0);
-    let navText = "Underway";
-    if(shipData.navstatus === 0) navText = "Underway";
-    else if(shipData.navstatus === 1) navText = "At anchor";
-    else if(shipData.navstatus === 5) navText = "Moored";
-    document.getElementById('navStatusBadge').innerText = navText;
-    document.getElementById('navStatusBadge').style.background = shipData.navstatus === 0 ? "#27ae60" : "#e67e22";
-  }
-  
-  function showTelemetryPanel(show) {
-    const panel = document.getElementById('liveTelemetryPanel');
-    if(panel) panel.style.display = show ? 'block' : 'none';
-  }
-  
-  function fetchShipByMMSI() {
-    const mmsiInput = document.getElementById('shipMMSI').value.trim();
-    if (!mmsiInput) { alert("Masukkan MMSI terlebih dahulu!"); return; }
-    if (!shipDatabase.length) { alert("Data kapal (ship.json) belum dimuat atau kosong."); return; }
-    const found = shipDatabase.find(ship => ship.mmsi === mmsiInput);
-    if (!found) { alert(`MMSI ${mmsiInput} tidak ditemukan`); return; }
-    activeShipTelemetry = found;
-    let shipDisplayName = `Kapal ${found.mmsi} (${found.class})`;
-    document.getElementById('shipName').value = shipDisplayName;
     
-    if (found.lon !== undefined && found.lat !== undefined) {
-      const startLat = found.lat;
-      const startLng = found.lon;
-      document.getElementById('startLat').value = startLat.toFixed(6);
-      document.getElementById('startLng').value = startLng.toFixed(6);
-      if (startMarker) map.removeLayer(startMarker);
-      start = [startLat, startLng];
-      startMarker = L.marker([startLat, startLng], { icon: L.divIcon({ html: `<i class="fas fa-anchor" style="font-size:28px; color:#1f7e9e;"></i>`, iconSize: [28,28], iconAnchor: [14,28] }) }).addTo(map).bindPopup("START (dari kapal)").openPopup();
-      setStatus(`🛳️ Start dari kapal MMSI ${mmsiInput}`, "#1f8a6b");
-      if (routeLine) { map.removeLayer(routeLine); routeLine = null; currentRouteCoords = []; }
-      if (shipMarker) map.removeLayer(shipMarker);
-      stopAnimation();
-    } else { alert("Data kapal tidak memiliki koordinat."); }
+    if (modeName === "BILTSM") {
+      try {
+        const islRes = await fetch('islands.json');
+        const islData = await islRes.json();
+        islands = islData.islands || [];
+        for (const isl of islands) {
+          if (!isl.polygon || isl.polygon.length < 3) continue;
+          if (isl.polygon[0] !== isl.polygon[isl.polygon.length-1])
+            isl.polygon.push(isl.polygon[0]);
+          const lats = isl.polygon.map(p=>p[0]);
+          const lngs = isl.polygon.map(p=>p[1]);
+          isl.bbox = { minLat: Math.min(...lats)-0.02, maxLat: Math.max(...lats)+0.02, minLng: Math.min(...lngs)-0.02, maxLng: Math.max(...lngs)+0.02 };
+          const poly = L.polygon(isl.polygon, { color: '#e67e22', weight: 1.2, fillOpacity: 0.2, fillColor: '#c0392b', interactive: false }).addTo(map);
+          islandPolygons.push(poly);
+        }
+        setStatus(`🏝️ ${islands.length} pulau dimuat (BILTSM)`, "#2c7a4d");
+      } catch(e) { setStatus("⚠️ islands.json tidak ada", "#f39c12"); }
+      
+      try {
+        const shipRes = await fetch('ship.json');
+        const shipJson = await shipRes.json();
+        shipDatabase = (shipJson.data && Array.isArray(shipJson.data)) ? shipJson.data : [];
+        setStatus(`🚢 ${shipDatabase.length} data kapal`, "#1f7e9e");
+      } catch(e) { shipDatabase = []; }
+      
+      try {
+        const portRes = await fetch('pelabuhan.json');
+        const portData = await portRes.json();
+        if (portData && portData.features) {
+          ports = portData.features.filter(f => f.geometry).map(f => ({
+            name: f.properties?.name || f.properties['name:id'] || 'Pelabuhan',
+            lat: f.geometry.coordinates[1],
+            lng: f.geometry.coordinates[0]
+          }));
+          setStatus(`⚓ ${ports.length} pelabuhan`, "#1f7e9e");
+          setupPortSearch();
+        }
+      } catch(e) { console.log("pelabuhan.json opsional"); }
+    } else {
+      islands = [];
+      setStatus(`🔹 Mode BIGRU: hanya waypoint2.json`, "#2f7f5f");
+      setInfo("Mode BIGRU: navigasi tanpa obstacle pulau");
+    }
     
-    if (found.length) document.getElementById('shipLength').value = found.length;
-    if (found.draft) document.getElementById('shipDraft').value = found.draft;
-    updateTelemetryUI(found);
-    showTelemetryPanel(true);
-  }
-  
-  function tryBuildGraph() {
-    if (!islandsReady || waypoints.length === 0 || (wpGraph && Object.keys(wpGraph).length > 0)) return;
     buildWaypointGraph();
   }
   
   function buildWaypointGraph() {
+    if (!waypoints.length) { wpReady = false; return; }
     setStatus("🔗 Membangun graf waypoint...", "#f39c12");
     wpGraph = {};
     for (let i = 0; i < waypoints.length; i++) {
@@ -884,7 +795,7 @@
       for (const { j } of dists.slice(0, WP_K_NEAR)) {
         const a = [waypoints[i].lat, waypoints[i].lng];
         const b = [waypoints[j].lat, waypoints[j].lng];
-        if (!islands.length || canSee(a, b, 18)) {
+        if (currentMode === "BIGRU" || !islands.length || canSee(a, b, 18)) {
           if (!wpGraph[i].includes(j)) wpGraph[i].push(j);
           if (!wpGraph[j]) wpGraph[j] = [];
           if (!wpGraph[j].includes(i)) wpGraph[j].push(i);
@@ -892,16 +803,16 @@
       }
     }
     wpReady = true;
-    setStatus(`✅ Graf siap · ${waypoints.length} titik`, "#2e7d64");
+    setStatus(`✅ Graf siap · ${waypoints.length} titik (${currentMode})`, "#2e7d64");
   }
   
   function findNearestWaypoints(coord, k = 10) {
     return waypoints.map((wp, i) => ({ i, d: dist(coord, [wp.lat, wp.lng]) })).sort((a,b)=>a.d-b.d).slice(0,k);
   }
   function pickReachable(coord, candidates) {
+    if (currentMode === "BIGRU" || !islands.length) return candidates.slice(0, 4);
     const reachable = candidates.filter(({ i }) => canSee(coord, [waypoints[i].lat, waypoints[i].lng], 24));
-    if (reachable.length >= 1) return reachable.slice(0, 4);
-    return candidates.slice(0, 2);
+    return reachable.length >= 1 ? reachable.slice(0, 4) : candidates.slice(0, 2);
   }
   
   class MinHeap {
@@ -909,7 +820,7 @@
     push(item) { this.h.push(item); this._up(this.h.length-1); }
     pop() { const top = this.h[0], last = this.h.pop(); if (this.h.length) { this.h[0] = last; this._down(0); } return top; }
     _up(i) { while(i>0) { const p=(i-1)>>1; if(this.h[p][0]<=this.h[i][0]) break; [this.h[p],this.h[i]]=[this.h[i],this.h[p]]; i=p; } }
-    _down(i) { const n=this.h.length; while(true) { let s=i, l=2*i+1, r=2*i+2; if(l<n && this.h[l][0]<this.h[s][0]) s=l; if(r<n && this.h[r][0]<this.h[s][0]) s=r; if(s===i) break; [this.h[i],this.h[s]]=[this.h[s],this.h[i]]; i=s; } }
+    _down(i) { const n=this.h.length; while(true) { let s=i,l=2*i+1,r=2*i+2; if(l<n && this.h[l][0]<this.h[s][0]) s=l; if(r<n && this.h[r][0]<this.h[s][0]) s=r; if(s===i) break; [this.h[i],this.h[s]]=[this.h[s],this.h[i]]; i=s; } }
     get size() { return this.h.length; }
   }
   
@@ -947,15 +858,16 @@
   }
   
   async function runRoute() {
-    if (!start || !end) { alert("⚠️ Tentukan START kapal dan TUJUAN (pelabuhan) dulu!"); return; }
+    if (!start || !end) { alert("⚠️ Tentukan START dan TUJUAN dulu!"); return; }
     if (isRouting) return;
     if (!wpReady || waypoints.length===0) { alert("Data waypoint belum siap."); return; }
     isRouting = true;
     showProgress(0.1);
-    setStatus("🔍 Mencari waypoint...", "#f39c12");
+    setStatus("🔍 Mencari rute...", "#f39c12");
     await tick();
-    if (isBlocked(start[0], start[1])) { alert("START di daratan!"); setStatus("❌ START daratan","red"); isRouting=false; hideProgress(); return; }
-    if (isBlocked(end[0], end[1])) { alert("TUJUAN di daratan!"); setStatus("❌ TUJUAN daratan","red"); isRouting=false; hideProgress(); return; }
+    if (islands.length && (isBlocked(start[0], start[1]) || isBlocked(end[0], end[1]))) {
+      alert("Start atau tujuan di daratan!"); setStatus("❌", "red"); isRouting=false; hideProgress(); return;
+    }
     
     const startCands = findNearestWaypoints(start, 14);
     const endCands = findNearestWaypoints(end, 14);
@@ -969,7 +881,6 @@
     const extraEdges = { 'S': [], 'E': [] };
     for (const {i} of startWPs) { extraEdges['S'].push(i); if(!extraEdges[i]) extraEdges[i]=[]; extraEdges[i].push('S'); }
     for (const {i} of endWPs) { extraEdges['E'].push(i); if(!extraEdges[i]) extraEdges[i]=[]; extraEdges[i].push('E'); }
-    if(startWPs.some(s=>endWPs.some(e=>e.i===s.i))){ extraEdges['S'].push('E'); extraEdges['E'].push('S'); }
     const coordOf = id => {
       if(id==='S') return start;
       if(id==='E') return end;
@@ -979,11 +890,8 @@
     showProgress(0.85);
     if (!pathIds || pathIds.length<2) {
       if(canSee(start, end, 45)) {
-        const rawCoords = [start,end];
-        drawRouteAsCurve(rawCoords);
-        const km = distKm(start,end).toFixed(1);
-        setStatus(`✅ Jalur Langsung: ${km} km`, "#2ecc71");
-        setInfo("Rute LOS langsung dengan smoothing.");
+        drawRouteAsCurve([start,end]);
+        setStatus(`✅ Jalur Langsung: ${distKm(start,end).toFixed(1)} km`, "#2ecc71");
       } else {
         setStatus("❌ Rute tidak ditemukan", "red");
       }
@@ -994,7 +902,7 @@
     let totalKm=0;
     for(let i=1;i<rawCoords.length;i++) totalKm += distKm(rawCoords[i-1],rawCoords[i]);
     setStatus(`✅ ${totalKm.toFixed(1)} km · ${(totalKm/1.852).toFixed(0)} nm`, "#2c8c6e");
-    setInfo(`🎯 Rute ke pelabuhan. Jarak: ${totalKm.toFixed(1)} km`);
+    setInfo(`Rute: ${totalKm.toFixed(1)} km`);
     showProgress(1);
     setTimeout(hideProgress,600);
     isRouting=false;
@@ -1008,26 +916,21 @@
     map.fitBounds(routeLine.getBounds(), { padding: [50,50] });
   }
   
-  function stopAnimation() {
-    if(animationInterval) { clearInterval(animationInterval); animationInterval = null; }
-  }
+  function stopAnimation() { if(animationInterval) { clearInterval(animationInterval); animationInterval = null; } }
   
   function createShipIcon() {
     const sogVal = activeShipTelemetry ? activeShipTelemetry.sog : 0;
     const cogVal = activeShipTelemetry ? activeShipTelemetry.cog : '?';
     return L.divIcon({
-      html: `<div style="background: #0a4c6e; border-radius: 24px; padding: 4px 12px; color: white; font-weight: 600; font-size: 11px; white-space: nowrap; box-shadow: 0 3px 8px rgba(0,0,0,0.4); border-left: 3px solid #f1c40f; display: flex; align-items: center; gap: 8px;"><i class="fas fa-ship" style="font-size: 12px;"></i><span>⚡${sogVal}kn</span><span>🧭${cogVal}°</span><span>📡${activeShipTelemetry?.class || 'A'}</span></div>`,
-      iconSize: [160, 32],
-      iconAnchor: [80, 16],
+      html: `<div style="background: #0a4c6e; border-radius: 24px; padding: 4px 12px; color: white; font-weight: 600; font-size: 11px; white-space: nowrap; box-shadow: 0 3px 8px rgba(0,0,0,0.4); border-left: 3px solid #f1c40f; display: flex; align-items: center; gap: 8px;"><i class="fas fa-ship" style="font-size: 12px;"></i><span>⚡${sogVal}kn</span><span>🧭${cogVal}°</span></div>`,
+      iconSize: [140, 32],
+      iconAnchor: [70, 16],
       className: 'ship-label'
     });
   }
   
   function startAnimation() {
-    if(!currentRouteCoords || currentRouteCoords.length < 2) {
-      alert("Tidak ada rute. Hitung rute terlebih dahulu!");
-      return;
-    }
+    if(!currentRouteCoords || currentRouteCoords.length < 2) { alert("Tidak ada rute. Hitung rute terlebih dahulu!"); return; }
     stopAnimation();
     if(shipMarker) map.removeLayer(shipMarker);
     shipMarker = L.marker(currentRouteCoords[0], { icon: createShipIcon() }).addTo(map);
@@ -1043,17 +946,9 @@
       const p1 = currentRouteCoords[segmentIndex];
       const p2 = currentRouteCoords[segmentIndex+1];
       t += speed;
-      if(t >= 1) {
-        t = 0;
-        segmentIndex++;
-        if(segmentIndex < currentRouteCoords.length) shipMarker.setLatLng(currentRouteCoords[segmentIndex]);
-        shipMarker.setIcon(createShipIcon());
-      } else {
-        const lat = p1[0] + (p2[0]-p1[0])*t;
-        const lng = p1[1] + (p2[1]-p1[1])*t;
-        shipMarker.setLatLng([lat, lng]);
-        shipMarker.setIcon(createShipIcon());
-      }
+      if(t >= 1) { t = 0; segmentIndex++; if(segmentIndex < currentRouteCoords.length) shipMarker.setLatLng(currentRouteCoords[segmentIndex]); }
+      else { const lat = p1[0] + (p2[0]-p1[0])*t; const lng = p1[1] + (p2[1]-p1[1])*t; shipMarker.setLatLng([lat, lng]); }
+      shipMarker.setIcon(createShipIcon());
       if(activeShipTelemetry) updateTelemetryUI(activeShipTelemetry);
     }, 80);
     setStatus("🚢 Animasi kapal berjalan menuju pelabuhan", "#2c9b6e");
@@ -1079,11 +974,7 @@
     if(routeLine){ map.removeLayer(routeLine); routeLine=null; currentRouteCoords=[]; stopAnimation(); if(shipMarker) map.removeLayer(shipMarker); }
   }
   
-  function setModeSelection(m) {
-    if(isRouting) return;
-    mode = m;
-    setStatus(`🖱️ Klik di peta untuk ${mode==='start'?'START':'FINISH'}`, "#2266aa");
-  }
+  function setModeSelection(m) { if(isRouting) return; mode = m; setStatus(`🖱️ Klik di peta untuk ${mode==='start'?'START':'FINISH'}`, "#2266aa"); }
   
   function clearAll(){
     if(isRouting) return;
@@ -1099,33 +990,74 @@
     document.getElementById('endLng').value='';
     document.getElementById('searchPortInput').value='';
     document.getElementById('selectedPortDisplay').style.display = 'none';
-    setStatus("Reset total.","#447799");
-    setInfo("Ketik nama pelabuhan untuk mencari tujuan.");
+    setStatus("Reset total.", "#447799");
+    setInfo(`Mode ${currentMode} aktif.`);
     showTelemetryPanel(false);
   }
   
-  map.on('click', e=>{
-    if(!mode || isRouting) return;
-    const lat=e.latlng.lat, lng=e.latlng.lng;
-    if(islands.length && isBlocked(lat,lng)){ alert("❌ Titik di daratan! Pilih di laut."); return; }
-    if(mode==='start'){
-      start=[lat,lng];
-      updateStartMarker(lat,lng);
-      document.getElementById('startLat').value=lat.toFixed(6);
-      document.getElementById('startLng').value=lng.toFixed(6);
-      setStatus(`📍 Start dari peta: ${lat.toFixed(5)}, ${lng.toFixed(5)}`,"#368f6b");
-    } else {
-      end=[lat,lng];
-      updateEndMarker(lat,lng);
-      document.getElementById('endLat').value=lat.toFixed(6);
-      document.getElementById('endLng').value=lng.toFixed(6);
-      document.getElementById('selectedPortDisplay').style.display = 'none';
-      document.getElementById('searchPortInput').value = '';
-      setStatus(`🏁 Finish dari peta: ${lat.toFixed(5)}, ${lng.toFixed(5)}`,"#667fa0");
+  function setupPortSearch() {
+    const searchInput = document.getElementById('searchPortInput');
+    const resultsDiv = document.getElementById('searchResults');
+    searchInput.addEventListener('input', function() {
+      const query = this.value.toLowerCase().trim();
+      if (query.length < 2 || !ports.length) { resultsDiv.style.display = 'none'; return; }
+      const filtered = ports.filter(port => port.name.toLowerCase().includes(query)).slice(0, 10);
+      if (filtered.length === 0) { resultsDiv.style.display = 'none'; return; }
+      resultsDiv.innerHTML = filtered.map(port => `<div class="search-result-item" data-lat="${port.lat}" data-lng="${port.lng}" data-name="${port.name.replace(/"/g, '&quot;')}"><div class="result-name">${port.name}</div><div class="result-coord">${port.lat.toFixed(4)}°, ${port.lng.toFixed(4)}°</div></div>`).join('');
+      resultsDiv.style.display = 'block';
+      document.querySelectorAll('.search-result-item').forEach(el => {
+        el.addEventListener('click', function() { selectPort(parseFloat(this.dataset.lat), parseFloat(this.dataset.lng), this.dataset.name); resultsDiv.style.display = 'none'; searchInput.value = this.dataset.name; });
+      });
+    });
+    document.addEventListener('click', function(e) { if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) resultsDiv.style.display = 'none'; });
+  }
+  
+  function selectPort(lat, lng, name) {
+    end = [lat, lng];
+    document.getElementById('endLat').value = lat.toFixed(6);
+    document.getElementById('endLng').value = lng.toFixed(6);
+    if (endMarker) map.removeLayer(endMarker);
+    endMarker = L.marker([lat, lng], { icon: L.divIcon({ html: `<i class="fas fa-flag-checkered" style="font-size:28px; color:#d97706;"></i>`, iconSize: [28,28], iconAnchor: [14,28] }) }).addTo(map).bindPopup(`🎯 TUJUAN: ${name}`).openPopup();
+    document.getElementById('selectedPortName').innerHTML = `<i class="fas fa-ship"></i> ${name} (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+    document.getElementById('selectedPortDisplay').style.display = 'flex';
+    setStatus(`🏁 Tujuan: ${name}`, "#d97706");
+    if (routeLine) { map.removeLayer(routeLine); routeLine = null; currentRouteCoords = []; stopAnimation(); if(shipMarker) map.removeLayer(shipMarker); }
+  }
+  
+  function fetchShipByMMSI() {
+    const mmsiInput = document.getElementById('shipMMSI').value.trim();
+    if (!mmsiInput) { alert("Masukkan MMSI!"); return; }
+    if (!shipDatabase.length) { alert("Data kapal belum dimuat (mode BILTSM)"); return; }
+    const found = shipDatabase.find(ship => ship.mmsi === mmsiInput);
+    if (!found) { alert(`MMSI ${mmsiInput} tidak ditemukan`); return; }
+    activeShipTelemetry = found;
+    document.getElementById('shipName').value = `Kapal ${found.mmsi}`;
+    if (found.lon !== undefined && found.lat !== undefined) {
+      document.getElementById('startLat').value = found.lat.toFixed(6);
+      document.getElementById('startLng').value = found.lon.toFixed(6);
+      start = [found.lat, found.lon];
+      updateStartMarker(found.lat, found.lon);
+      setStatus(`🛳️ Start dari kapal MMSI ${mmsiInput}`, "#1f8a6b");
+      if (routeLine) { map.removeLayer(routeLine); routeLine = null; currentRouteCoords = []; stopAnimation(); if(shipMarker) map.removeLayer(shipMarker); }
     }
-    if(routeLine){ map.removeLayer(routeLine); routeLine=null; currentRouteCoords=[]; stopAnimation(); if(shipMarker) map.removeLayer(shipMarker); }
-    mode=null;
-  });
+    updateTelemetryUI(found);
+    showTelemetryPanel(true);
+  }
+  
+  function updateTelemetryUI(shipData) {
+    if (!shipData) return;
+    document.getElementById('liveSog').innerText = (shipData.sog || 0).toFixed(1);
+    document.getElementById('liveCog').innerText = shipData.cog || '---';
+    document.getElementById('liveHdg').innerText = shipData.hdg || '---';
+    document.getElementById('liveUtc').innerText = shipData.utc || '--';
+    document.getElementById('liveClass').innerText = shipData.class || 'A';
+    document.getElementById('liveRot').innerText = shipData.rot || 0;
+    let navText = shipData.navstatus === 0 ? "Underway" : (shipData.navstatus === 1 ? "At anchor" : "Moored");
+    document.getElementById('navStatusBadge').innerText = navText;
+  }
+  function showTelemetryPanel(show) { document.getElementById('liveTelemetryPanel').style.display = show ? 'block' : 'none'; }
+  
+  map.on('click', e=>{ if(!mode || isRouting) return; const lat=e.latlng.lat, lng=e.latlng.lng; if(islands.length && isBlocked(lat,lng)){ alert("❌ Titik di daratan!"); return; } if(mode==='start'){ start=[lat,lng]; updateStartMarker(lat,lng); document.getElementById('startLat').value=lat.toFixed(6); document.getElementById('startLng').value=lng.toFixed(6); setStatus(`📍 Start dari peta: ${lat.toFixed(5)}, ${lng.toFixed(5)}`); } else { end=[lat,lng]; updateEndMarker(lat,lng); document.getElementById('endLat').value=lat.toFixed(6); document.getElementById('endLng').value=lng.toFixed(6); setStatus(`🏁 Finish dari peta: ${lat.toFixed(5)}, ${lng.toFixed(5)}`); } if(routeLine){ map.removeLayer(routeLine); routeLine=null; currentRouteCoords=[]; stopAnimation(); if(shipMarker) map.removeLayer(shipMarker); } mode=null; });
   
   // Navbar collapse
   const nav = document.getElementById('marineNav');
@@ -1134,7 +1066,10 @@
   function toggleNavPanel() { nav.classList.toggle('collapsed'); toggleIconSpan.className = nav.classList.contains('collapsed') ? 'fas fa-chevron-down' : 'fas fa-chevron-up'; }
   toggleNavBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleNavPanel(); });
   document.getElementById('navHeader').addEventListener('click', (e) => { if(e.target !== toggleNavBtn && !toggleNavBtn.contains(e.target)) toggleNavPanel(); });
-  toggleIconSpan.className = nav.classList.contains('collapsed') ? 'fas fa-chevron-down' : 'fas fa-chevron-up';
+  
+  // Mode buttons
+  document.getElementById('modeBigruBtn').addEventListener('click', () => { loadMode("BIGRU"); document.getElementById('modeBigruBtn').classList.add('active'); document.getElementById('modeBiltsmBtn').classList.remove('active'); });
+  document.getElementById('modeBiltsmBtn').addEventListener('click', () => { loadMode("BILTSM"); document.getElementById('modeBiltsmBtn').classList.add('active'); document.getElementById('modeBigruBtn').classList.remove('active'); });
   
   document.getElementById('applyStartBtn').addEventListener('click', applyStartFromInput);
   document.getElementById('pickEndMapBtn').addEventListener('click', ()=>setModeSelection('end'));
@@ -1143,10 +1078,12 @@
   document.getElementById('clearAllBtn').addEventListener('click', clearAll);
   document.getElementById('fetchShipByMmsiBtn').addEventListener('click', fetchShipByMMSI);
   document.getElementById('pickStartMapBtn').addEventListener('click', ()=>setModeSelection('start'));
+  document.getElementById('clearPortBtn')?.addEventListener('click', function() { end = null; document.getElementById('endLat').value=''; document.getElementById('endLng').value=''; document.getElementById('selectedPortDisplay').style.display='none'; document.getElementById('searchPortInput').value=''; if(endMarker) map.removeLayer(endMarker); setStatus("Tujuan dibatalkan", "#447799"); });
   
-  window.addEventListener('load', ()=>{
-    setStatus("🌊 Cari pelabuhan tujuan dengan mengetik nama", "#2f9e6b");
-  });
+  // Load default BIGRU
+  loadMode("BIGRU");
+  document.getElementById('modeBigruBtn').classList.add('active');
+  window.addEventListener('load', ()=>{ setStatus("🌊 Pilih mode: BIGRU atau BILTSM", "#2f9e6b"); });
 </script>
 </body>
 </html>
