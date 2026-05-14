@@ -480,10 +480,10 @@
 <body>
 <div id="map"></div>
 
-<div class="marine-nav" id="marineNav">
+<div class="marine-nav collapsed" id="marineNav">
   <div class="nav-header" id="navHeader">
     <div class="brand"><i class="fas fa-ship"></i> SeaRoute Pro <span>AIS + RUTE</span></div>
-    <div class="toggle-icon" id="navToggleBtn"><i class="fas fa-chevron-up" id="toggleIcon"></i></div>
+    <div class="toggle-icon" id="navToggleBtn"><i class="fas fa-chevron-down" id="toggleIcon"></i></div>
   </div>
   <div class="nav-content">
     <div class="mode-tabs">
@@ -644,7 +644,7 @@
     buildWaypointGraph();
   }
 
-  function buildWaypointGraph() { /* sama seperti sebelumnya */ 
+  function buildWaypointGraph() { 
     if(!waypoints.length) { wpReady=false; return; }
     setStatus("Membangun graf...", "#f39c12");
     wpGraph={};
